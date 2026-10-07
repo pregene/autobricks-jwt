@@ -21,7 +21,7 @@ An APIKEY is valid only for its assigned operation and registered service.
 - Prevents the requesting service from reading the complete token payload.
 - Authenticates issuance requests with the Issuance APIKEY.
 - Persists JWT session records in the configured database.
-- Writes a successful issuance event to Autobricks TrueLog.
+- Writes a successful issuance event to syslog and, when the Autobricks TrueLog client is configured, to Autobricks TrueLog.
 
 ## Field Query
 
@@ -37,7 +37,7 @@ An APIKEY is valid only for its assigned operation and registered service.
 
 - Returns the same error for an expired session and a nonexistent session.
 - Does not reveal whether an invalid session previously existed.
-- Writes the common expired-or-nonexistent session error to Autobricks TrueLog.
+- Writes the common expired-or-nonexistent session error to syslog and, when the Autobricks TrueLog client is configured, to Autobricks TrueLog.
 
 ## Cache and Database
 
@@ -56,6 +56,8 @@ The same registration, authentication, token, authorization, session, and Cache 
 - TLS
 - Mutual TLS
 
+TLS and mutual TLS require an installed and configured Autobricks PKI client. Without it, Autobricks JWT provides only the Unix domain socket and TCP interfaces. See [DEPENDENCIES.md](DEPENDENCIES.md).
+
 ## Related Service Responsibilities
 
 | Service | Responsibility |
@@ -68,12 +70,14 @@ The same registration, authentication, token, authorization, session, and Cache 
 
 ## True Log Events
 
-Autobricks JWT writes exactly two event categories to Autobricks TrueLog:
+When the Autobricks TrueLog client is installed and configured, Autobricks JWT writes exactly two event categories to Autobricks TrueLog:
 
 1. Successful JWT issuance
 2. Expired or nonexistent session request
 
 Successful field queries, policy evaluation, session retention extension, and Cache activity do not create JWT TrueLog events.
+
+Without the Autobricks TrueLog client, the two events are written only to syslog and no immutable audit evidence or append receipt is produced. For secure deployment requirements and installation order, see [DEPENDENCIES.md](DEPENDENCIES.md).
 
 ## Security Boundaries
 

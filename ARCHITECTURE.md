@@ -364,7 +364,9 @@ Shared Infrastructure
 
 ### Service Interface
 
-The service exposes operations through Unix domain socket, TCP, TLS, and mutual TLS transports. Network service access uses Autobricks PKI-issued identity certificates. The JWT Service presents its server certificate and validates the connecting service's client certificate chain, validity, client-authentication purpose, AIA OCSP `GOOD` status, and registered fingerprint before allowing JWT issuance or query operations. Transport selection does not change APIKEY, token, field authorization, session, database, Cache, or logging semantics.
+The service supports Unix domain socket, TCP, TLS, and mutual TLS transports according to the active dependency profile. Secure network access uses Autobricks PKI-issued identity certificates. The JWT Service presents its server certificate and validates the connecting service's client certificate chain, validity, client-authentication purpose, AIA OCSP `GOOD` status, and registered fingerprint before allowing JWT issuance or query operations. Transport selection does not change APIKEY, token, field authorization, session, database, Cache, or logging semantics.
+
+TLS and mutual TLS are enabled only when the Autobricks PKI client is installed, configured, and the required certificate material validates successfully. Without that dependency, the service exposes only Unix domain socket and TCP. The dependency and secure installation profiles are defined in [DEPENDENCIES.md](DEPENDENCIES.md).
 
 TLS and mutual TLS transports support persistent keep-alive connections. A client can send multiple framed requests over one authenticated connection, reusing the established TLS channel instead of performing a new handshake for every JWT operation. Each request carries its own operation credentials and correlation identifier; keep-alive does not reuse or broaden an APIKEY authorization decision.
 
@@ -456,6 +458,8 @@ Autobricks JWT stores operational service logs and audit-evidence logs separatel
 | Audit-evidence log | Autobricks TrueLog | Preserve evidence of successful JWT issuance and expired-or-nonexistent session requests | Only `JWT_ISSUED` and `JWT_SESSION_INVALID` events defined by `LOGGING.md` | Yes; stored in the corresponding JWT database record |
 
 Every `JWT_ISSUED` and `JWT_SESSION_INVALID` event is written to syslog as well as submitted to TrueLog. The syslog copy provides local operational visibility but is not audit evidence. TrueLog remains the authoritative audit-evidence destination.
+
+TrueLog submission and receipt persistence are enabled only when the Autobricks TrueLog client is installed and configured. Without it, the two audit events remain in syslog only and no TrueLog evidence or receipt exists. A runtime delivery failure after TrueLog has been enabled follows the audit failure and reconciliation rules; it is not treated as an intentional syslog-only profile change.
 
 Other operational syslog entries are not submitted to TrueLog merely because they contain an error code. Syslog entries do not create TrueLog append receipts or audit-receipt database records, and the TrueLog receipt is not added to the syslog copy.
 
