@@ -30,7 +30,7 @@ An APIKEY is valid only for its assigned operation and registered service.
 - Decrypts the token only inside Autobricks JWT.
 - Authorizes every requested field for the calling service.
 - Returns only the authorized field values requested by the caller.
-- Never returns the complete decrypted payload.
+- Never returns the complete decrypted payload to a Web Service or Autobricks Policy.
 - Extends session retention when an authorized query accesses an active session.
 
 ## Session Errors
@@ -62,7 +62,7 @@ The same registration, authentication, token, authorization, session, and Cache 
 | --- | --- |
 | Autobricks JWT | Service registration, APIKEY authorization, encrypted JWT issuance, token validation, payload decryption, field authorization, and session handling |
 | [Autobricks PKI](https://github.com/pregene/autobricks-pki) | Certificates and trust material for TLS and mutual TLS service connections |
-| Autobricks Policy | JWT field queries and policy evaluation without direct token decryption |
+| Autobricks Policy | JWT field queries and policy evaluation without access to the complete decrypted payload |
 | [Autobricks Cache](https://github.com/pregene/autobricks-cache) | In-memory lookup, mutation, database persistence, and retention |
 | [Autobricks TrueLog](https://github.com/pregene/autobricks-log) | Durable storage for JWT issuance and invalid-session events |
 
@@ -78,7 +78,9 @@ Successful field queries, policy evaluation, session retention extension, and Ca
 ## Security Boundaries
 
 - Token payload encryption and decryption occur only inside Autobricks JWT.
-- Clients do not receive decryption keys or complete decrypted payloads.
+- Complete payload decryption exists only as an internal JWT Service operation.
+- Web Services and Autobricks Policy cannot obtain a complete decrypted payload.
+- Web Services and Autobricks Policy do not receive decryption keys.
 - Issuance and Query APIKEYs have separate permissions.
 - Audit records do not contain APIKEYs, JWTs, complete payloads, decrypted field values, or cryptographic secrets.
 - Logs and error details do not expose protected token content.
