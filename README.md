@@ -85,6 +85,15 @@ Successful field queries, policy evaluation, session retention extension, and Ca
 - Audit records do not contain APIKEYs, JWTs, complete payloads, decrypted field values, or cryptographic secrets.
 - Logs and error details do not expose protected token content.
 
+## Key Management
+
+- Autobricks JWT manages JWT encryption and decryption keys inside the service boundary.
+- Service interfaces never return JWT encryption keys, JWT decryption keys, or key-storage credentials.
+- JWT key data is stored in a SQLCipher-encrypted database.
+- The SQLCipher database key is managed through an HSM.
+- Internal key management, encrypted storage, and HSM protection minimize key exposure but do not claim protection from a privileged host administrator.
+- A user with root access to the JWT Service host can inspect the running system and may obtain key material available to the service.
+
 ## License
 
 Autobricks JWT is governed by the terms in [LICENSE](LICENSE).
