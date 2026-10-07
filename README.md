@@ -1,66 +1,87 @@
 # Autobricks JWT
 
-Autobricks JWT is a security service for issuing encrypted session tokens and providing controlled access to individual token fields without exposing the complete token payload.
+Autobricks JWT issues encrypted session tokens and provides authorized access to individual token fields without exposing the complete token payload.
 
-## Core Functions
+## Service Registration
 
-- Issue encrypted JWT session tokens whose payload cannot be read by the requesting client.
-- Build token payloads from client-supplied JSON, database records, or service-defined data sources.
-- Keep payload encryption and decryption inside the JWT service.
-- Allow an authorized policy service to request only the token fields required for a policy decision.
-- Prevent clients and policy services from receiving the complete decrypted payload.
-- Apply service and field-level authorization to token-field requests.
-- Validate token integrity, intended audience, expiration, and session state before returning a field value.
-- Revoke sessions and reject expired, invalid, or unauthorized tokens.
+A service must be registered before it can use Autobricks JWT. Registration issues two APIKEYs with separate permissions.
 
-## Session Storage and Cache
+| APIKEY | Permission | Consumers |
+| --- | --- | --- |
+| Issuance APIKEY | Create encrypted JWT sessions | Web Service |
+| Query APIKEY | Query authorized fields from an active JWT session | Web Service, Autobricks Policy |
 
-JWT sessions can be persisted in a database and managed through Autobricks Cache. Cache definitions remain configurable so each deployment can select the required database and retention behavior.
+An APIKEY is valid only for its assigned operation and registered service.
 
-Autobricks Cache provides MAP-based in-memory lookup, immediate in-memory mutation, asynchronous database persistence through a connection-owned write queue, and configurable retention. These capabilities allow the JWT service to use cached records for low-latency session validation and to extend retention when an authorized lookup accesses an active session.
+## Token Issuance
 
-Additional caches can be configured independently for data such as users, accounts, devices, or other token source records. Their loading, lookup, mutation, and retention policies are separate from the session cache.
+- Accepts token source data as client-supplied JSON, database records, or service-defined data.
+- Creates the token payload inside Autobricks JWT.
+- Encrypts the payload before returning the JWT.
+- Prevents the requesting service from reading the complete token payload.
+- Authenticates issuance requests with the Issuance APIKEY.
+- Persists JWT session records in the configured database.
+- Writes a successful issuance event to Autobricks TrueLog.
 
-## Related Service Responsibilities
+## Field Query
 
-| Service | Responsibility |
-| --- | --- |
-| Autobricks JWT | Owns encrypted token issuance, token validation, payload decryption, field-level authorization, session handling, and the JWT service interfaces. |
-| [Autobricks PKI](https://github.com/pregene/autobricks-pki) | Provides the certificates and trust material used by TLS and mutual TLS deployments. It does not issue JWTs or access token payloads. |
-| Autobricks Policy | Sends a token to Autobricks JWT, requests only the fields required for a policy decision, and performs the policy evaluation. It does not decrypt the token or receive the complete payload. |
-| [Autobricks Cache](https://github.com/pregene/autobricks-cache) | Provides configurable MAP-based lookup, mutation, database persistence, and retention for JWT sessions and optional source-data caches. Cache behavior is selected by JWT service configuration. |
-| [Autobricks TrueLog](https://github.com/pregene/autobricks-log) | Provides True Log storage for the two JWT audit events defined below. It does not receive token payloads or decrypted field values. |
+- Authenticates field-query requests with the Query APIKEY.
+- Validates the registered service, token integrity, intended audience, expiration, and session state.
+- Decrypts the token only inside Autobricks JWT.
+- Authorizes every requested field for the calling service.
+- Returns only the authorized field values requested by the caller.
+- Never returns the complete decrypted payload.
+- Extends session retention when an authorized query accesses an active session.
 
-## True Log Events
+## Session Errors
 
-Autobricks JWT writes only the following two event categories to Autobricks TrueLog:
+- Returns the same error for an expired session and a nonexistent session.
+- Does not reveal whether an invalid session previously existed.
+- Writes the common expired-or-nonexistent session error to Autobricks TrueLog.
 
-1. A JWT was issued successfully.
-2. A request used a session that is expired or does not exist.
+## Cache and Database
 
-An expired session and a nonexistent session produce the same service error and the same True Log event category. The response and audit record do not reveal whether the session previously existed.
-
-Successful field lookup, policy evaluation, session retention extension, and Cache activity do not create JWT True Log events. Audit records never contain the JWT, the complete payload, decrypted field values, or cryptographic secrets.
+- Uses [Autobricks Cache](https://github.com/pregene/autobricks-cache) for MAP-based in-memory session lookup and configurable retention.
+- Applies Cache mutations before asynchronous database persistence through the Connection-owned WRITE Queue.
+- Provides configurable Cache Definitions for each deployment.
+- Supports independent Caches for optional source data such as users, accounts, and devices.
+- Keeps source-data Cache loading and retention separate from JWT session retention.
 
 ## Service Interfaces
 
-The service provides the same JWT operations through configurable transports:
+The same registration, authentication, token, authorization, session, and Cache functions are available through:
 
 - Unix domain socket
 - TCP
 - TLS
 - Mutual TLS
 
-Transport configuration does not change the token, authorization, field-access, session, or cache behavior.
+## Related Service Responsibilities
 
-## Security Boundary
+| Service | Responsibility |
+| --- | --- |
+| Autobricks JWT | Service registration, APIKEY authorization, encrypted JWT issuance, token validation, payload decryption, field authorization, and session handling |
+| [Autobricks PKI](https://github.com/pregene/autobricks-pki) | Certificates and trust material for TLS and mutual TLS service connections |
+| Autobricks Policy | JWT field queries and policy evaluation without direct token decryption |
+| [Autobricks Cache](https://github.com/pregene/autobricks-cache) | In-memory lookup, mutation, database persistence, and retention |
+| [Autobricks TrueLog](https://github.com/pregene/autobricks-log) | Durable storage for JWT issuance and invalid-session events |
 
-- Token payloads are encrypted before they leave the JWT service.
-- Decryption keys are owned by the JWT service and are never returned through a service interface.
-- Complete decrypted payloads are not returned to clients or policy services.
-- Field requests return only explicitly authorized values.
-- Decrypted payloads and cryptographic secrets are excluded from logs, error details, and audit messages.
-- Cache and database records do not provide an interface for retrieving a complete plaintext payload.
+## True Log Events
+
+Autobricks JWT writes exactly two event categories to Autobricks TrueLog:
+
+1. Successful JWT issuance
+2. Expired or nonexistent session request
+
+Successful field queries, policy evaluation, session retention extension, and Cache activity do not create JWT TrueLog events.
+
+## Security Boundaries
+
+- Token payload encryption and decryption occur only inside Autobricks JWT.
+- Clients do not receive decryption keys or complete decrypted payloads.
+- Issuance and Query APIKEYs have separate permissions.
+- Audit records do not contain APIKEYs, JWTs, complete payloads, decrypted field values, or cryptographic secrets.
+- Logs and error details do not expose protected token content.
 
 ## License
 
