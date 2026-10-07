@@ -44,10 +44,22 @@ SQLCipher does not permanently store its own database key. The integrating servi
 
 The architecture reduces the number of systems that can access JWT keys, removes complete-payload access from Web Services and Autobricks Policy, and limits credential permissions. It does not make compromise impossible.
 
+## Source Data Trust Boundary
+
+Autobricks JWT can create a token from records returned by a configured user database or another configured data source. It validates and protects the token created from those records, but it cannot determine whether an otherwise valid source record was maliciously inserted, altered, or substituted before the query result reached the JWT Service.
+
+- The owner of the user database is responsible for database access control, record integrity, change authorization, backup security, and compromise detection.
+- A compromised user table can cause Autobricks JWT to issue a cryptographically valid token containing false or unauthorized source data.
+- Token encryption does not prove that the source database record was correct; it protects the payload created from that record.
+- A successful issuance event in Autobricks TrueLog proves that Autobricks JWT performed an issuance operation. It does not prove that the source record was legitimate.
+- Autobricks JWT is not responsible for an incorrect issuance caused solely by compromised or falsified source records returned through a correctly configured database query.
+- Autobricks JWT remains responsible for enforcing service registration, APIKEY permissions, configured field authorization, token construction, encryption, session handling, and its own database-query behavior.
+
 ## Residual Risks
 
 - A compromised Web Service can misuse its Issuance APIKEY to issue tokens within that registered service's permission.
 - A compromised Web Service or Policy service can misuse its Query APIKEY to retrieve fields authorized for that registered service.
+- A compromised source database can provide false records that result in cryptographically valid but incorrectly issued tokens.
 - Information already supplied by or returned to a compromised client is not protected from that client.
 - A compromised JWT Service can access complete payloads while processing requests.
 - A root user on the JWT Service host can inspect the running system and may obtain plaintext or key material available during runtime.
