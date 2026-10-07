@@ -1,0 +1,28 @@
+# Rust build output
+/target/
+**/*.rs.bk
+*.pdb
+
+# Project-local generated and private directories
+/bin/
+/build/
+/packaging/
+/scripts/
+
+# Local development instructions
+/AGENTS.md
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+

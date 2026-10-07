@@ -1,0 +1,972 @@
+# Autobricks PKI Source-Available License
+
+Version 1.0
+
+Copyright (c) 2026 Autobricks.
+All rights reserved.
+
+---
+
+## 1. Purpose and License Classification
+
+This License permits the Autobricks PKI Server 1.0 software to be publicly available in source-code form for inspection, security review, audit, evaluation, testing, building, authorized use, and redistribution of unmodified copies.
+
+The Software may be downloaded, compiled, built, installed, and used in its original and unmodified form.
+
+This License does **not** grant a general right to modify the Software or create derivative works.
+
+Accordingly, this License is a **source-available license** and is not intended to qualify as an Open Source license under the Open Source Initiative definition.
+
+All rights not expressly granted by this License are reserved by the Licensor.
+
+---
+
+## 2. Definitions
+
+For purposes of this License:
+
+### 2.1 Software
+
+**"Software"** means Autobricks PKI Server 1.0 and all materials distributed under this License, including, where applicable:
+
+* source code;
+* executable code;
+* object code;
+* scripts;
+* service files;
+* build files;
+* configuration templates;
+* database schemas;
+* documentation;
+* installation files;
+* packaging files;
+* policy templates; and
+* other materials included with the Software.
+
+### 2.2 Licensor
+
+**"Licensor"** means the copyright holder identified in the copyright notice above, its lawful successor, or another individual or legal entity expressly authorized to license the Software.
+
+### 2.3 You
+
+**"You"** means an individual or legal entity exercising rights granted under this License.
+
+### 2.4 Modification
+
+**"Modification"** means any change to the Software or any portion of it, including:
+
+* addition;
+* deletion;
+* replacement;
+* editing;
+* patching;
+* adaptation;
+* translation;
+* transformation;
+* porting;
+* alteration of program logic;
+* alteration of executable or object code; or
+* any other change that produces a modified version of the Software.
+
+Compiling or building the original, unmodified source code using the supplied or documented build process is **not** considered a Modification.
+
+Changes expressly permitted under Section 5, **Runtime Configuration and Normal Operation**, are also not considered Modifications.
+
+### 2.5 Derivative Work
+
+**"Derivative Work"** means a work that is based upon, incorporates, adapts, modifies, translates, transforms, or is otherwise legally derived from the Software under applicable copyright law.
+
+### 2.6 Redistribution
+
+**"Redistribution"** means making copies of the Software available to another person or legal entity by any means, including:
+
+* publishing;
+* transferring;
+* providing copies;
+* hosting for download;
+* including the Software in another distribution;
+* selling copies; or
+* otherwise supplying copies to a third party.
+
+---
+
+## 3. Grant of Permission
+
+Subject to all terms of this License, the Licensor grants You a worldwide, non-exclusive, royalty-free right to:
+
+1. view and inspect the source code;
+2. download the Software;
+3. copy the Software;
+4. perform security review and source-code audit;
+5. evaluate and test the Software;
+6. compile and build the original, unmodified source code;
+7. create executable, object, package, or installation forms from the original, unmodified source code;
+8. install the original Software;
+9. execute and operate the original Software;
+10. use the original Software for personal, educational, research, internal organizational, governmental, or commercial purposes;
+11. develop integrations using documented interfaces without modifying the Software;
+12. configure the Software as permitted under Section 5;
+13. make backup and archival copies; and
+14. redistribute complete and unmodified copies in accordance with Section 6.
+
+No permission to modify the Software is granted except where expressly authorized in writing by the Licensor.
+
+---
+
+## 4. Modification and Derivative Works Prohibited
+
+You may not modify the Software without prior written permission from the Licensor.
+
+Without prior written permission, You may not:
+
+1. modify source code;
+2. modify executable or object code;
+3. add functionality;
+4. remove functionality;
+5. disable functionality;
+6. replace functionality;
+7. alter program logic;
+8. patch the Software;
+9. distribute patches intended to alter the Software;
+10. modify build logic for the purpose of producing a modified version;
+11. translate the implementation into another programming language;
+12. port the Software by modifying its implementation;
+13. create a modified binary;
+14. create or distribute a modified package;
+15. create a Derivative Work;
+16. publish a modified version;
+17. redistribute a modified version;
+18. operate a modified version as a publicly accessible service;
+19. incorporate modified portions of the Software into another product;
+20. copy substantial protected implementation code into another software product;
+21. remove or alter security-related functionality; or
+22. represent a modified implementation as the original Autobricks PKI Server 1.0 Software.
+
+This Section does not prohibit independently developed software that does not copy, modify, adapt, or derive protected expression from the Software.
+
+Modifications made directly by the Licensor are not restricted by this Section.
+
+Modifications expressly authorized in writing by the Licensor are permitted only within the scope of that authorization.
+
+---
+
+## 5. Runtime Configuration and Normal Operation
+
+Normal configuration required to install, deploy, integrate, administer, and operate the Software is permitted and is not considered a prohibited Modification.
+
+You may change configuration values exposed by the Software for their intended operational purpose.
+
+Permitted configuration changes may include:
+
+* IP addresses;
+* hostnames;
+* network interfaces;
+* ports;
+* service addresses;
+* storage locations;
+* database locations;
+* filesystem paths;
+* mount points;
+* log destinations;
+* syslog settings;
+* service names;
+* user names;
+* group names;
+* file ownership;
+* permitted filesystem permissions;
+* certificate profiles;
+* certificate validity periods;
+* certificate subject parameters;
+* certificate SAN parameters;
+* certificate templates;
+* certificate policies;
+* key algorithms;
+* key sizes;
+* signature algorithms;
+* approved cryptographic configuration;
+* Root CA configuration;
+* Intermediate CA configuration;
+* certificate-chain configuration;
+* CRL settings;
+* CRL distribution points;
+* OCSP settings;
+* OCSP responder addresses;
+* certificate enrollment settings;
+* certificate renewal settings;
+* certificate revocation settings;
+* HSM configuration;
+* PKCS#11 configuration;
+* TPM configuration;
+* SoftHSM configuration;
+* cryptographic provider configuration;
+* authentication settings;
+* authorization settings;
+* access-control settings;
+* API settings;
+* service parameters;
+* startup parameters;
+* environment variables;
+* retention periods;
+* documented policy values; and
+* other parameters expressly intended to be configured by an administrator.
+
+You may also perform normal administrative operations, including:
+
+* starting services;
+* stopping services;
+* restarting services;
+* enabling or disabling startup;
+* creating a Root CA;
+* creating an Intermediate CA;
+* issuing certificates;
+* renewing certificates;
+* revoking certificates;
+* publishing CRLs;
+* responding to OCSP requests;
+* exporting public certificates;
+* exporting certificate chains;
+* exporting certificate bundles;
+* generating cryptographic keys through documented mechanisms;
+* configuring HSMs or cryptographic modules;
+* backing up authorized data;
+* restoring authorized backups;
+* rotating certificates or cryptographic keys through documented procedures;
+* configuring service accounts;
+* applying official updates supplied by the Licensor; and
+* operating documented maintenance procedures.
+
+These operations are permitted only when performed using the functionality and configuration mechanisms provided by the unmodified Software.
+
+This Section does not authorize changes to:
+
+* source code;
+* executable code;
+* object code;
+* internal program logic;
+* certificate-validation logic;
+* security-enforcement logic;
+* key-protection logic; or
+* scripts containing implementation logic.
+
+---
+
+## 6. Redistribution of Unmodified Copies
+
+You may redistribute the Software only in its original and unmodified form.
+
+Redistributed copies must preserve:
+
+1. this License in its entirety;
+2. copyright notices;
+3. attribution notices;
+4. security notices;
+5. warranty disclaimers;
+6. project-name information;
+7. version information;
+8. notices relating to third-party software; and
+9. references to the official project where included in the original distribution.
+
+You may redistribute:
+
+* the original source-code distribution;
+* officially released binary packages; or
+* binaries or packages built from the complete and unmodified source code,
+
+provided that the resulting Software remains functionally unmodified and this License remains included.
+
+You may not:
+
+1. remove this License;
+2. replace this License with another license;
+3. remove copyright notices;
+4. obscure copyright notices;
+5. remove attribution;
+6. claim authorship of the Software;
+7. claim ownership of the Software;
+8. remove third-party license notices;
+9. alter the Software before redistribution; or
+10. imply that You are the official developer or maintainer of Autobricks PKI Server 1.0.
+
+Recipients of an authorized unmodified copy receive their rights directly from the Licensor under this License.
+
+You may not sublicense the Software under different terms.
+
+---
+
+## 7. Public Repositories and GitHub Forks
+
+If the Software is hosted in a public repository on GitHub or another source-code hosting platform, the platform's terms may permit activities necessary to use that platform, including viewing, copying, cloning, or forking a repository.
+
+The ability to technically fork or copy the repository does not grant permission under this License to:
+
+* modify the Software;
+* publish a modified version;
+* distribute a modified version;
+* operate a modified version;
+* create a Derivative Work; or
+* relicense the Software.
+
+An unmodified fork or repository copy may be maintained for:
+
+* building;
+* archival;
+* inspection;
+* security review;
+* evaluation;
+* testing;
+* deployment; or
+* analysis.
+
+Any Modification requires prior written permission from the Licensor.
+
+---
+
+## 8. Integration With Other Systems
+
+You may integrate and operate the Software with independent systems through documented or ordinarily supported interfaces.
+
+Permitted integrations may include:
+
+* REST APIs;
+* command-line interfaces;
+* IPC mechanisms;
+* Unix domain sockets;
+* TCP/IP;
+* HTTPS;
+* mutual TLS;
+* PKCS#11;
+* HSM interfaces;
+* TPM interfaces;
+* certificate enrollment interfaces;
+* certificate validation interfaces;
+* OCSP;
+* CRL distribution;
+* syslog;
+* databases;
+* monitoring systems;
+* logging systems;
+* authentication systems;
+* directory services;
+* web servers;
+* application servers;
+* database servers;
+* network appliances; and
+* other documented interfaces.
+
+Using documented interfaces to communicate with the Software does not by itself create a Derivative Work.
+
+This Section does not authorize:
+
+* copying source code into another project;
+* modifying internal components;
+* replacing internal implementation logic;
+* altering certificate-validation behavior;
+* altering security-enforcement behavior; or
+* producing a modified implementation.
+
+---
+
+## 9. PKI Security Controls
+
+You may not intentionally remove, disable, bypass, weaken, circumvent, or alter security-related functionality of the Software.
+
+Protected security functionality includes, where applicable:
+
+* CA private-key protection;
+* Root CA protection;
+* Intermediate CA protection;
+* certificate issuance authorization;
+* certificate-profile enforcement;
+* certificate-policy enforcement;
+* certificate validity enforcement;
+* key-generation controls;
+* cryptographic algorithm controls;
+* certificate-signing controls;
+* certificate-chain verification;
+* certificate validation;
+* authentication;
+* authorization;
+* access control;
+* administrative access control;
+* HSM protection;
+* PKCS#11 protection;
+* TPM protection;
+* cryptographic-provider controls;
+* revocation processing;
+* CRL generation;
+* CRL validation;
+* OCSP processing;
+* OCSP validation;
+* audit logging;
+* audit-record protection;
+* integrity validation;
+* certificate database integrity;
+* private-key access restrictions;
+* export restrictions;
+* security-event recording; and
+* other mechanisms intended to protect PKI integrity.
+
+Security analysis and inspection of publicly available source code are permitted.
+
+Permission to inspect or analyze the Software does not grant permission to modify or bypass security controls.
+
+---
+
+## 10. Private Keys and Cryptographic Material
+
+The Software may generate, store, access, or use sensitive cryptographic material.
+
+Such material may include:
+
+* Root CA private keys;
+* Intermediate CA private keys;
+* server private keys;
+* client private keys;
+* device private keys;
+* OCSP responder keys;
+* signing keys;
+* HSM objects;
+* PKCS#11 objects;
+* TPM-protected keys;
+* cryptographic secrets; and
+* authentication credentials.
+
+You are responsible for protecting cryptographic material created or managed within Your environment.
+
+You may not intentionally modify the Software to:
+
+1. extract non-exportable private keys;
+2. bypass HSM restrictions;
+3. bypass TPM restrictions;
+4. bypass PKCS#11 access controls;
+5. weaken private-key protections;
+6. export keys contrary to configured security policy;
+7. disclose protected cryptographic material;
+8. circumvent authentication protecting cryptographic keys; or
+9. create hidden or unauthorized access to cryptographic material.
+
+Normal authorized use of cryptographic keys through documented Software interfaces is permitted.
+
+---
+
+## 11. Certificate Issuance and Validation Integrity
+
+You may not modify or operate the Software in a manner designed to falsify or misrepresent certificate issuance, validation, or trust information.
+
+You may not intentionally:
+
+1. issue certificates without required authorization by bypassing Software controls;
+2. bypass configured certificate profiles;
+3. bypass configured certificate policies;
+4. forge certificate status;
+5. falsify certificate issuance records;
+6. falsify revocation records;
+7. suppress required revocation information;
+8. alter certificate validity outside documented mechanisms;
+9. bypass certificate-chain validation;
+10. bypass certificate-signature validation;
+11. falsely represent an unauthorized CA as an authorized Autobricks-managed CA; or
+12. misrepresent modified PKI behavior as behavior of the original Software.
+
+Normal CA administration through documented Software mechanisms is permitted.
+
+---
+
+## 12. Certificate Revocation, CRL, and OCSP
+
+Normal certificate revocation and certificate-status operations are expressly permitted.
+
+This includes:
+
+* revoking certificates;
+* setting documented revocation reasons;
+* generating CRLs;
+* publishing CRLs;
+* updating CRLs;
+* operating an OCSP responder;
+* responding to certificate-status requests; and
+* removing expired operational data according to documented maintenance procedures.
+
+You may not intentionally modify the Software to:
+
+* conceal revoked certificates;
+* falsify OCSP status;
+* falsify CRL contents;
+* prevent authorized revocation;
+* suppress required revocation information;
+* return intentionally incorrect certificate status; or
+* misrepresent certificate status generated by a modified implementation as originating from the original Autobricks PKI Server 1.0 Software.
+
+---
+
+## 13. Audit and Security Records
+
+Where the Software creates audit or security records, You may not intentionally modify the Software to:
+
+1. suppress required audit events;
+2. falsify audit records;
+3. alter protected audit records;
+4. remove integrity protection;
+5. bypass security-event recording;
+6. misrepresent administrative actions;
+7. conceal unauthorized certificate issuance;
+8. conceal unauthorized key operations; or
+9. conceal unauthorized certificate revocation or status changes.
+
+Normal retention, archival, backup, and expiration operations performed through documented mechanisms are permitted.
+
+---
+
+## 14. Feedback, Bug Reports, and Contributions
+
+You may provide:
+
+* bug reports;
+* security reports;
+* vulnerability reports;
+* feature requests;
+* design suggestions;
+* operational feedback; and
+* descriptions of proposed improvements.
+
+Providing feedback does not require permission.
+
+Because Modification is otherwise prohibited, You may not prepare or submit modified source code, patches, or pull requests unless the Licensor expressly authorizes You to do so.
+
+### Authorized Contributions
+
+If the Licensor expressly authorizes You to prepare or submit a patch, pull request, or other source-code contribution, that authorization applies only to the specific contribution or scope approved by the Licensor.
+
+Unless otherwise agreed in writing, by submitting an authorized contribution You grant the Licensor a perpetual, worldwide, irrevocable, non-exclusive, royalty-free, transferable, and sublicensable license to:
+
+1. use the contribution;
+2. reproduce it;
+3. modify it;
+4. integrate it into the Software;
+5. distribute it;
+6. sublicense it;
+7. commercialize it; and
+8. include it in current or future versions of the Software.
+
+Authorization to submit a contribution does not grant permission to independently publish, maintain, distribute, or operate a modified version.
+
+---
+
+## 15. Commercial Use
+
+Commercial use of the original and unmodified Software is permitted.
+
+This includes operating the original Software:
+
+* within a business;
+* within a government organization;
+* within internal infrastructure;
+* in a production environment;
+* as an internal PKI;
+* as a certificate-management system;
+* as part of security infrastructure;
+* in connection with commercial services; or
+* together with other systems through permitted interfaces.
+
+Commercial use does not grant permission to modify the Software.
+
+Without prior written permission, You may not commercially:
+
+* distribute a modified version;
+* sell a modified version;
+* rebrand a modified version;
+* sublicense a modified version;
+* incorporate modified source code into another product; or
+* offer a modified version as a hosted or managed service.
+
+Commercial redistribution of the original and unmodified Software remains subject to Section 6.
+
+---
+
+## 16. Reverse Engineering
+
+Except where applicable law provides rights that cannot legally be restricted, You may not reverse engineer, decompile, or disassemble executable or object-code portions of the Software for the purpose of:
+
+* bypassing security controls;
+* bypassing license restrictions;
+* extracting protected implementation components;
+* accessing protected cryptographic material;
+* defeating private-key protections;
+* producing a modified implementation; or
+* creating a Derivative Work.
+
+This Section does not prohibit inspection, analysis, or security review of source code intentionally published by the Licensor.
+
+---
+
+## 17. Autobricks Name, Marks, and Branding
+
+This License does not grant trademark rights.
+
+The name:
+
+**Autobricks**
+
+and related:
+
+* product names;
+* trademarks;
+* logos;
+* service marks;
+* visual identities;
+* domain names; and
+* branding
+
+remain the property of their respective owners.
+
+You may use the Autobricks name solely as reasonably necessary to accurately identify the original Software.
+
+You may not:
+
+1. falsely claim to be Autobricks;
+2. imply endorsement by Autobricks;
+3. imply certification by Autobricks;
+4. imply sponsorship by Autobricks;
+5. imply an official relationship with Autobricks;
+6. present a modified product as an official Autobricks product;
+7. present an independently operated CA as an official Autobricks CA merely because the Software is used;
+8. use confusingly similar branding to misrepresent origin; or
+9. remove original attribution notices.
+
+Additional trademark permission requires separate written authorization.
+
+---
+
+## 18. Third-Party Components
+
+The Software may include, depend upon, link to, or interact with third-party software or cryptographic libraries.
+
+Third-party components remain governed by their respective licenses.
+
+This License applies only to materials for which the Licensor has authority to grant rights under this License.
+
+Nothing in this License restricts rights independently granted by a third-party license.
+
+Where a third-party license grants rights that cannot lawfully be restricted by this License, that third-party license controls with respect to that component.
+
+You are responsible for compliance with applicable third-party licenses.
+
+---
+
+## 19. Ownership and Reservation of Rights
+
+The Software is licensed, not sold.
+
+Ownership of a physical or electronic copy does not transfer copyright or intellectual-property ownership.
+
+Except for permissions expressly granted under this License:
+
+* copyright remains with the Licensor;
+* ownership remains with the Licensor;
+* trademark rights remain with their respective owners; and
+* all other rights are reserved.
+
+No right is implied merely because:
+
+* the source code is publicly visible;
+* the repository is public;
+* the Software can be downloaded;
+* the Software can be compiled;
+* the Software can technically be modified;
+* the Software can be forked through a hosting platform;
+* binaries are publicly available; or
+* documentation is publicly available.
+
+No patent license is granted unless expressly stated in a separate written agreement.
+
+---
+
+## 20. License Violation and Termination
+
+Your rights under this License automatically terminate if You materially violate this License.
+
+Upon termination, You must cease unauthorized:
+
+* use;
+* operation;
+* modification;
+* publication;
+* redistribution;
+* sublicensing; or
+* commercial exploitation
+
+of the Software.
+
+You must cease distribution and operation of unauthorized modified versions or Derivative Works.
+
+The Licensor may restore Your rights through written authorization after a violation has been corrected.
+
+Termination does not limit any other rights or remedies available under applicable law.
+
+---
+
+## 21. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED **"AS IS"** AND **"AS AVAILABLE"**, WITHOUT WARRANTY OF ANY KIND, EXPRESS, IMPLIED, OR STATUTORY, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.
+
+THE LICENSOR DISCLAIMS WARRANTIES INCLUDING, WITHOUT LIMITATION:
+
+* MERCHANTABILITY;
+* FITNESS FOR A PARTICULAR PURPOSE;
+* NON-INFRINGEMENT;
+* ACCURACY;
+* RELIABILITY;
+* AVAILABILITY;
+* SECURITY;
+* CRYPTOGRAPHIC FITNESS;
+* CERTIFICATE VALIDITY;
+* DATA INTEGRITY;
+* CONTINUOUS OPERATION; AND
+* ERROR-FREE OPERATION.
+
+THE LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL:
+
+* OPERATE WITHOUT INTERRUPTION;
+* OPERATE WITHOUT ERROR;
+* PREVENT ALL SECURITY INCIDENTS;
+* PREVENT ALL KEY COMPROMISE;
+* PREVENT ALL CERTIFICATE MISUSE;
+* SATISFY EVERY PKI POLICY;
+* SATISFY EVERY CERTIFICATION REQUIREMENT;
+* SATISFY EVERY REGULATORY REQUIREMENT;
+* SATISFY EVERY AUDIT REQUIREMENT;
+* BE SUITABLE FOR EVERY TRUST MODEL; OR
+* BE SUITABLE FOR EVERY OPERATIONAL ENVIRONMENT.
+
+YOU ARE RESPONSIBLE FOR DETERMINING WHETHER THE SOFTWARE, CRYPTOGRAPHIC CONFIGURATION, CERTIFICATE POLICIES, KEY MANAGEMENT PROCEDURES, AND OPERATIONAL ENVIRONMENT ARE APPROPRIATE FOR YOUR REQUIREMENTS.
+
+---
+
+## 22. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR, AUTHORS, MAINTAINERS, CONTRIBUTORS, AND AUTHORIZED DISTRIBUTORS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, CONSEQUENTIAL, OR OTHER DAMAGES ARISING FROM OR RELATED TO THE SOFTWARE.
+
+THIS INCLUDES, WITHOUT LIMITATION:
+
+* LOSS OF DATA;
+* LOSS OF PRIVATE KEYS;
+* KEY COMPROMISE;
+* CERTIFICATE MIS-ISSUANCE;
+* CERTIFICATE VALIDATION FAILURE;
+* CERTIFICATE EXPIRATION;
+* FAILURE OF CERTIFICATE RENEWAL;
+* FAILURE OF CERTIFICATE REVOCATION;
+* CRL FAILURE;
+* OCSP FAILURE;
+* TRUST-CHAIN FAILURE;
+* SECURITY INCIDENTS;
+* UNAUTHORIZED ACCESS;
+* LOSS OF AUDIT RECORDS;
+* LOSS OF PROFITS;
+* LOSS OF REVENUE;
+* BUSINESS INTERRUPTION;
+* SYSTEM FAILURE;
+* SERVICE INTERRUPTION;
+* REGULATORY CONSEQUENCES;
+* COMPLIANCE CONSEQUENCES; OR
+* COST OF SUBSTITUTE GOODS OR SERVICES.
+
+THIS LIMITATION APPLIES REGARDLESS OF WHETHER LIABILITY IS ASSERTED UNDER:
+
+* CONTRACT;
+* TORT;
+* NEGLIGENCE;
+* STRICT LIABILITY;
+* STATUTE; OR
+* ANOTHER LEGAL THEORY,
+
+EVEN IF THE LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+Some jurisdictions do not allow certain exclusions or limitations of liability. In those jurisdictions, these provisions apply only to the maximum extent permitted by law.
+
+---
+
+## 23. Compliance With Applicable Law
+
+You are responsible for using the Software in compliance with applicable:
+
+* laws;
+* regulations;
+* cryptographic regulations;
+* privacy requirements;
+* certificate policies;
+* contractual obligations;
+* court orders; and
+* organizational requirements.
+
+Nothing in this License requires You to violate applicable law.
+
+Nothing in this License excludes or restricts a right that applicable law does not permit the parties to exclude or restrict.
+
+---
+
+## 24. Additional Permissions
+
+The Licensor may grant additional permissions through a separate written agreement.
+
+Such permission may include authorization to:
+
+* modify the Software;
+* create a Derivative Work;
+* maintain a private modified version;
+* publish a modified version;
+* operate a modified version;
+* redistribute modified versions;
+* integrate modified source code into another product;
+* rebrand the Software;
+* sublicense the Software;
+* commercially distribute a modified version; or
+* obtain a separate commercial license.
+
+Additional permission applies only to the scope expressly stated in the written authorization.
+
+No oral or implied permission is sufficient.
+
+---
+
+## 25. Severability
+
+If any provision of this License is held invalid, illegal, or unenforceable by a competent authority, that provision shall be applied to the maximum extent permitted by law.
+
+The remaining provisions remain in effect.
+
+---
+
+## 26. No Waiver
+
+Failure by the Licensor to enforce a provision of this License does not waive that provision.
+
+Failure to enforce one violation does not waive the right to enforce another violation.
+
+Any waiver must be expressly made in writing by the Licensor.
+
+---
+
+## 27. Entire License
+
+This License contains the terms under which the Licensor grants rights in the Software unless a separate written agreement expressly provides otherwise.
+
+This License is not modified by:
+
+* repository discussions;
+* issue comments;
+* documentation;
+* chat messages;
+* forum posts;
+* pull-request discussions;
+* verbal statements; or
+* other informal communications.
+
+A separate written agreement expressly authorized by the Licensor may grant additional or different rights.
+
+---
+
+## 28. License Versions
+
+This Software is licensed under **Autobricks PKI Source-Available License Version 1.0** unless the Licensor expressly states otherwise.
+
+The Licensor may publish future versions of this License.
+
+Publication of a later version does not automatically relicense Software previously distributed under Version 1.0.
+
+A later version applies only where the Licensor expressly states that the Software may be used under that later version.
+
+---
+
+## 29. Acceptance
+
+By exercising any permission granted by this License, You acknowledge that Your use of the Software is subject to this License.
+
+If You do not accept these terms, You must not exercise rights granted solely by this License.
+
+Rights granted independently by applicable law or third-party licenses are unaffected except to the extent lawfully permitted.
+
+---
+
+## 30. Permission Requests
+
+Prior written permission from the Licensor is required before You:
+
+* modify the Software;
+* prepare an unauthorized patch;
+* publish modified source code;
+* create a Derivative Work;
+* distribute a modified version;
+* operate a modified version as a service;
+* incorporate modified source code into another product;
+* rebrand a modified version;
+* sublicense a modified version; or
+* commercially distribute a modified version.
+
+Permission requests should be submitted through an official Autobricks communication channel or another contact method designated by the Licensor.
+
+---
+
+## 31. Plain-Language Summary
+
+This Section is provided only for convenience.
+
+If this summary conflicts with another provision, the full License text above controls.
+
+### You may:
+
+* view the source code;
+* download the source code;
+* inspect and audit the source code;
+* compile the original source code;
+* build the original source code;
+* create binaries from the unmodified source code;
+* install the Software;
+* operate the Software;
+* use the Software commercially;
+* create and operate a Root CA;
+* create and operate Intermediate CAs;
+* generate cryptographic keys through documented functions;
+* issue certificates;
+* renew certificates;
+* revoke certificates;
+* generate and publish CRLs;
+* operate OCSP functionality;
+* configure certificate profiles and policies;
+* configure HSM, PKCS#11, TPM, or other supported cryptographic providers;
+* integrate through documented interfaces;
+* make backups;
+* maintain an unmodified repository copy;
+* use official binary distributions; and
+* redistribute complete and unmodified copies.
+
+### You may not, without prior written permission:
+
+* modify source code;
+* modify executable or object code;
+* change internal program logic;
+* create unauthorized patches;
+* create Derivative Works;
+* publish modified versions;
+* redistribute modified versions;
+* operate modified versions as a service;
+* bypass private-key protections;
+* bypass HSM, TPM, or PKCS#11 protections;
+* weaken certificate validation;
+* bypass certificate issuance authorization;
+* falsify certificate issuance records;
+* falsify CRL or OCSP information;
+* conceal revoked certificates;
+* suppress required audit records;
+* remove or weaken security controls;
+* remove copyright notices;
+* replace this License;
+* rebrand a modified version as an official Autobricks product; or
+* claim ownership or authorship of the Software.
+
+---
+
+**Autobricks PKI Source-Available License 1.0**
+
+Copyright (c) 2026 Autobricks.
+All rights reserved.
