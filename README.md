@@ -2,6 +2,69 @@
 
 Autobricks JWT issues encrypted session tokens and provides authorized access to individual token fields without exposing the complete token payload.
 
+## Service Block Diagram
+
+```mermaid
+flowchart TB
+    subgraph Clients[Registered Client Services]
+        Writer[Issuance Client<br/>write certificate and Issuance APIKEY]
+        Reader[Query Client<br/>read certificate and Query APIKEY]
+    end
+
+    subgraph Interfaces[Service Interfaces]
+        Entry[Selected Interface]
+        UDS[Unix Domain Socket]
+        TCP[TCP]
+        TLS[TLS]
+        MTLS[Mutual TLS]
+        Entry --> UDS
+        Entry --> TCP
+        Entry --> TLS
+        Entry --> MTLS
+    end
+
+    subgraph JWT[Autobricks JWT Service]
+        Router[Framing and Request Router]
+        Identity[Transport Identity Validation<br/>certificate, OCSP, fingerprint, and URI SAN when enabled]
+        Authorization[Service Registry and<br/>APIKEY Authorization]
+        Issuance[JWT Issuance]
+        Query[Session Status and<br/>Authorized Field Query]
+        Crypto[Internal Token Cryptography]
+        Session[Session Management]
+        Receipt[Audit Receipt Persistence]
+    end
+
+    Writer --> Entry
+    Reader --> Entry
+    UDS --> Router
+    TCP --> Router
+    TLS --> Router
+    MTLS --> Router
+    Router --> Identity
+    Identity --> Authorization
+    Authorization --> Issuance
+    Authorization --> Query
+    Issuance --> Crypto
+    Query --> Crypto
+    Issuance --> Session
+    Query --> Session
+
+    PKI[Autobricks PKI Client] -. certificates and OCSP trust .-> Identity
+    Cache[Autobricks Cache<br/>required shared library] <--> Session
+    Source[(Configured Token Source)] --> Issuance
+    SessionDB[(JWT Session Database)] <--> Session
+    KeyDB[(SQLCipher Key Store)] <--> Crypto
+    HSM[HSM] <--> KeyDB
+    Issuance -->|issued event or service error| Syslog[Operating Server Syslog]
+    Query -->|invalid session or service error| Syslog
+    Issuance -->|issued event when configured| TrueLog[Autobricks TrueLog Client]
+    Query -->|invalid session when configured| TrueLog
+    TrueLog --> Receipt
+    Receipt --> SessionDB
+```
+
+Autobricks Cache is required. PKI and TrueLog integrations are conditional as defined in [DEPENDENCIES.md](DEPENDENCIES.md). Without the PKI client, only Unix domain socket and TCP are available. Without the TrueLog client, audit-event copies remain in syslog and no immutable audit receipt is stored.
+
 ## Service Registration
 
 A service must be registered before it can use Autobricks JWT. Registration issues two APIKEYs with separate permissions.
@@ -12,6 +75,75 @@ A service must be registered before it can use Autobricks JWT. Registration issu
 | Query APIKEY | Query authorized fields from an active JWT session | Web Service, Autobricks Policy |
 
 An APIKEY is valid only for its assigned operation and registered service.
+
+## Issuance-to-Query Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Registered Write Client
+    participant R as Registered Read Client
+    participant J as Autobricks JWT
+    participant S as Configured Source
+    participant C as Autobricks Cache
+    participant D as JWT Database
+    participant L as Syslog
+    participant T as Autobricks TrueLog
+
+    W->>J: Issue request + write certificate + Issuance APIKEY
+    J->>J: Validate transport identity, certificate, OCSP, fingerprint, and write URI SAN
+    J->>J: Validate registered service and Issuance APIKEY
+    J->>S: Resolve configured JSON, database, or service source
+    S-->>J: Source values
+    J->>J: Build and encrypt the complete payload internally
+    J->>C: Insert active session
+    C->>D: Persist through configured Cache write path
+    J->>L: JWT_ISSUED event copy
+    opt TrueLog client is configured
+        J->>T: JWT_ISSUED audit event
+        T-->>J: Durable append receipt
+        J->>D: Store receipt in the issuance record
+    end
+    J-->>W: Encrypted JWT only
+    W-->>R: Supply encrypted JWT to an authorized consumer
+
+    opt Session-status query
+        R->>J: Encrypted JWT + read certificate + Query APIKEY
+        J->>J: Validate transport identity, read URI SAN, registration, and Query APIKEY
+        J->>C: Look up active session
+        alt Session is active
+            J-->>R: ACTIVE
+        else Session is missing or expired
+            J->>L: JWT_SESSION_INVALID with error code 8060
+            opt TrueLog client is configured
+                J->>T: JWT_SESSION_INVALID audit event
+                T-->>J: Durable append receipt
+                J->>D: Store receipt in the invalid-session record
+            end
+            J-->>R: SESSION_NOT_FOUND_OR_EXPIRED
+        end
+    end
+
+    R->>J: Encrypted JWT + requested fields + read certificate + Query APIKEY
+    J->>J: Validate transport identity, read URI SAN, registration, and Query APIKEY
+    J->>C: Look up active session
+    alt Session is missing or expired
+        J->>L: JWT_SESSION_INVALID with error code 8060
+        opt TrueLog client is configured
+            J->>T: JWT_SESSION_INVALID audit event
+            T-->>J: Durable append receipt
+            J->>D: Store receipt in the invalid-session record
+        end
+        J-->>R: SESSION_NOT_FOUND_OR_EXPIRED
+    else Session is active
+        J->>J: Validate and decrypt the complete JWT internally
+        J->>J: Authorize and project only requested fields
+        J->>C: Extend sliding session Retention
+        J-->>R: Authorized field values only
+    end
+```
+
+The sequence shows the Secure dependency profile. Read and write operations use separately issued client certificates. Reduced profiles apply the transport limitations in [DEPENDENCIES.md](DEPENDENCIES.md). Complete plaintext payloads and JWT cryptographic keys remain inside Autobricks JWT throughout both flows.
 
 ## Token Issuance
 
