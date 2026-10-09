@@ -366,6 +366,28 @@ Shared Infrastructure
 
 The service supports Unix domain socket, TCP, TLS, and mutual TLS transports according to the active dependency profile. Secure network access uses Autobricks PKI-issued identity certificates. The JWT Service presents its server certificate and validates the connecting service's client certificate chain, validity, client-authentication purpose, AIA OCSP `GOOD` status, and registered fingerprint before allowing JWT issuance or query operations. Transport selection does not change APIKEY, token, field authorization, session, database, Cache, or logging semantics.
 
+### Management Interface
+
+JWT client registration, modification, and deletion use a local management path
+that is separate from every JWT service transport. An interactive `ab-jwt-cli`
+process connects to the restricted Unix domain socket owned by
+`autobricks-jwt-cli.service`. The client service verifies the caller's Unix peer
+identity, authorizes and filters the requested management operation, and then
+forwards the accepted request to `ab-jwtd` through a separate restricted server
+management Unix domain socket.
+
+Interactive users cannot connect directly to the server management socket, and
+neither management socket is world-accessible. Filesystem ownership, restrictive
+socket permissions, and peer-credential verification are all required. The
+TCP, TLS, and mutual TLS JWT service interfaces never expose management
+operations.
+
+When certificate provisioning succeeds, the service path returns the verified
+certificate package to the interactive `ab-jwt-cli` process. That process writes
+the package into its invocation working directory with the caller's ownership.
+The broker and server do not write to a caller-supplied arbitrary filesystem
+path.
+
 TLS and mutual TLS are enabled only when the Autobricks PKI client is installed, configured, and the required certificate material validates successfully. Without that dependency, the service exposes only Unix domain socket and TCP. The dependency and secure installation profiles are defined in [DEPENDENCIES.md](DEPENDENCIES.md).
 
 TLS and mutual TLS transports support persistent keep-alive connections. A client can send multiple framed requests over one authenticated connection, reusing the established TLS channel instead of performing a new handshake for every JWT operation. Each request carries its own operation credentials and correlation identifier; keep-alive does not reuse or broaden an APIKEY authorization decision.

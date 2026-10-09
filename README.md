@@ -230,6 +230,10 @@ Without the Autobricks TrueLog client, the two events are written only to syslog
 - Internal key management, encrypted storage, and HSM protection minimize key exposure but do not claim protection from a privileged host administrator.
 - A user with root access to the JWT Service host can inspect the running system and may obtain key material available to the service.
 
+## Process Documentation
+
+Process-level design documents are indexed in [docs/README.md](docs/README.md). Each registration, token, and deletion lifecycle process is maintained as a separate document.
+
 ## License
 
 Autobricks JWT is governed by the terms in [LICENSE](LICENSE).
