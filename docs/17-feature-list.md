@@ -157,3 +157,13 @@ workflow, packaging, and end-to-end restart behavior are tracked separately.
 | FTL-144 | `PLAN` | Failed-recovery rollback that leaves the original active database and HSM slots usable | [Recovery](14-recovery.md#verification-failure) |
 | FTL-145 | `PLAN` | Post-recovery registration reload, Cache rebuild, scheduler restoration, and listener restart | [Data Backup](11-data-backup.md#restoration-boundary) |
 | FTL-146 | `PLAN` | Recovery operational logging, classified failure reporting, and successful recovery audit evidence | [Recovery](14-recovery.md) |
+| FTL-147 | `PLAN` | READ-service registration of the exact WRITE services whose tokens it may access | [Service Registration](02-service-registration.md#security-boundary) |
+| FTL-148 | `PLAN` | Durable SQLCipher storage and management validation of READ-to-WRITE service bindings | [Service Registration](02-service-registration.md#security-boundary) |
+| FTL-149 | `PLAN` | Issuing-service authorization before status lookup, token decryption, field projection, or Retention extension | [JWT Query](04-service-json-web-token-query.md#authorized-field-query) |
+| FTL-150 | `PLAN` | Cross-service query isolation tests for allowed and rejected issuers in complete-token and token-optional modes | [JWT Query](04-service-json-web-token-query.md#security-boundaries) |
+| FTL-151 | `PLAN` | Authoritative durable session-state validation on every production Cache-backed query path | [Architecture](../ARCHITECTURE.md#cache-adapter) |
+| FTL-152 | `PLAN` | Idempotent Cache-removal retry and reconciliation after durable JWT revocation | [JWT Revocation](05-service-json-web-token-revocation.md#concurrency-and-idempotency) |
+| FTL-153 | `PLAN` | Stale-Cache denial tests proving that a durably revoked or missing session cannot become active | [JWT Revocation](05-service-json-web-token-revocation.md#processing) |
+| FTL-154 | `PLAN` | Post-restoration invalidation of restored active sessions before service listeners reopen | [Data Backup](11-data-backup.md#restoration-boundary) |
+| FTL-155 | `PLAN` | Post-restoration Cache rebuild that excludes invalidated, revoked, expired, and incomplete session records | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery-procedure) |
+| FTL-156 | `PLAN` | End-to-end recovery tests proving that sessions revoked or issued after the selected restoration point cannot be reactivated | [Recovery](14-recovery.md) |
