@@ -33,6 +33,12 @@ The matrix below assumes that the required Autobricks Cache shared library is in
 | Not installed or not configured | Installed and configured | Unix domain socket and TCP only | Audit events are written to syslog and TrueLog; TrueLog receipts are stored in the JWT database. |
 | Not installed or not configured | Not installed or not configured | Unix domain socket and TCP only | Audit events are written only to syslog. No TrueLog evidence or receipt is available. |
 
+The audit behavior in this matrix assumes that audit logging is enabled during
+installation. When audit logging is disabled, no local audit event, syslog
+audit-event copy, TrueLog submission, or TrueLog receipt is created regardless
+of TrueLog client availability. Mandatory connection-access logs and classified
+service-error logs remain in syslog.
+
 An installed package is considered available only after its required configuration and connectivity checks succeed.
 
 ## Autobricks PKI Client

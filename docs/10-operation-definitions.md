@@ -30,8 +30,10 @@ The registry contains these definitions:
 | `JWT_QUERY` | `READ` | Check an active session and return only authorized requested fields |
 
 These definitions are product protocol data. Service registration cannot add,
-rename, or change their permission class. A request-history row stores the
-resolved operation name so its purpose and required permission remain explicit.
+rename, or change their permission class. Minimum request-processing state
+stores the resolved operation name; when request logging is enabled, the
+request log also stores it so the operation purpose and required permission
+remain explicit.
 
 ## Common Request Fields
 

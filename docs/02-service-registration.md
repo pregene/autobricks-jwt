@@ -23,6 +23,13 @@ and uses its registered operation class; the caller cannot change or override
 that permission during service registration. An inactive, deleted, unknown, or
 already incompatibly bound client is rejected.
 
+One `client_id` can be bound to multiple service registrations. When mutual
+TLS is enabled, each service registration receives its own certificate. The
+certificate is bound one-to-one to `service_id`, not one-to-one to `client_id`.
+Services sharing the same READ or WRITE client therefore retain independent
+certificate fingerprints and APIKEYs. See
+[Service Certificate](16-service-certificate.md).
+
 ## Subject Type
 
 Each service registration selects exactly one subject type: `USER`, `DEVICE`,

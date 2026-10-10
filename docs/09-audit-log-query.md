@@ -8,6 +8,10 @@ Autobricks JWT audit information has two authorized query paths:
    records from its WORM storage.
 2. Query the local SQLCipher audit-log table maintained by Autobricks JWT.
 
+These paths contain records only for events created while audit logging was
+enabled. Activity that occurred while audit logging was disabled has no local
+audit record, TrueLog event, or receipt to query later.
+
 The two paths have different responsibilities. Autobricks TrueLog is the
 authoritative immutable evidence store. The local table is the JWT Service's
 searchable index of audit events, relationships, receipt state, and the exact
@@ -18,8 +22,8 @@ operational log and does not contain a durable append receipt.
 
 ## Audit Records
 
-The local audit-log table contains records for the audit categories defined in
-[LOGGING.md](../LOGGING.md):
+When audit logging is enabled, the local audit-log table contains records for
+the audit categories defined in [LOGGING.md](../LOGGING.md):
 
 - Successful JWT issuance
 - An expired or nonexistent session request
@@ -253,12 +257,16 @@ cannot be claimed until the TrueLog query succeeds.
 
 Deleting a JWT service or client does not delete its local audit-log records,
 stored receipts, or TrueLog evidence. Historical rows retain their original
-service and client relationships.
+service and client relationships until the local 90-day audit retention period
+expires.
 
-The local SQLCipher retention policy and the Autobricks TrueLog WORM retention
-policy are separate. Local table availability does not shorten or rewrite
-TrueLog retention, and TrueLog does not use the local table as its authoritative
-WORM record.
+Autobricks JWT automatically drains an internal SQLCipher audit record and its
+locally stored receipt after 90 days. Older audit evidence is checked by
+signing in directly to the Autobricks TrueLog server. The local SQLCipher
+retention policy and the Autobricks TrueLog WORM retention policy are separate.
+Local table availability does not shorten or rewrite TrueLog retention, and
+TrueLog does not use the local table as its authoritative WORM record. The
+local Drain contract is defined in [Log Drain Cycle](13-log-drain-cycle.md).
 
 ## Logging of Audit Queries
 

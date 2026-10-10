@@ -133,9 +133,10 @@ can continue to be queried. The preview obtains the active-session count from
 the same authoritative state used by the deletion operation; it is informative
 and can change before confirmation.
 
-Deleting a service does not delete its bound JWT client or revoke the client
-certificate. Client deletion is the separate process defined in
-[JWT Client Deletion](07-jwt-client-deletion.md).
+Deleting a service does not delete its parent JWT client. It retires that
+service's active and pending certificate bindings without changing certificates
+owned by other services under the same `client_id`. Client deletion is the
+separate process defined in [JWT Client Deletion](07-jwt-client-deletion.md).
 
 ## Confirmation Screen
 
@@ -150,7 +151,8 @@ Delete Service
   Client:     token-server
 
   This action revokes the service APIKEY and all active sessions issued by
-  this service. Historical records are retained.
+  this service. Historical state is retained, and enabled logs remain until
+  their normal 90-day Drain.
 
   [ Cancel ]    [ Delete Service ]
 ```
@@ -190,22 +192,27 @@ broker authorization, and the `ab-jwtd` management permission check.
 2. Validate `request_id`, selected `client_id`, and selected `service_id`.
 3. Load the active client and require the service to remain bound to that exact
    client.
-4. Load the operation class, APIKEY record, and dependent active-session count.
+4. Load the operation class, APIKEY record, active and pending service
+   certificates, active connections, and dependent active-session count.
 5. Reject stale, missing, already deleted, incorrectly bound, or unauthorized
    selections.
 6. Mark the service registration `DELETED` and record `deleted_at`.
-7. Revoke every APIKEY belonging to that service registration.
-8. For a WRITE service, mark its active sessions `REVOKED`, record their
+7. Revoke every APIKEY and retire every active or pending certificate binding
+   belonging to that service registration.
+8. Close connections authenticated by a retired service fingerprint.
+9. For a WRITE service, mark its active sessions `REVOKED`, record their
    revocation time, and remove their active Cache and `token_id` MAP entries.
-9. For a READ service, remove its field-query authorization without modifying
+10. For a READ service, remove its field-query authorization without modifying
    JWT sessions issued by a WRITE service.
-10. Remove the service's authorization, APIKEY, field allowlist,
+11. Remove the service's authorization, APIKEY, certificate-fingerprint,
+    field allowlist,
     subject-source, active-session, `token_id` MAP, token-key, validation, and
     Retention entries from every applicable runtime Cache. Shared Cache
     resources and entries owned by other active services remain unchanged.
-11. Preserve service, request, issuance, token-version, key, revocation, error,
-   and audit-receipt history.
-12. Return the completed deletion result and refresh the selected client's
+12. Preserve service, certificate, token-version, key, and revocation state and preserve
+   enabled request, issuance, and audit-receipt logs until their normal
+   retention Drain applies.
+13. Return the completed deletion result and refresh the selected client's
     service list.
 
 The state transition is fail-closed. A service is not reported as deleted while
@@ -297,5 +304,5 @@ authorization boundary. Internal failures map to the safe response defined by
 - A second confirmation is required before state changes begin.
 - READ service deletion removes only that READ authorization.
 - WRITE service deletion removes its authority and revokes its active sessions.
-- JWT client identity and certificate lifecycle remain separate from service
-  deletion.
+- Service deletion retires only the selected service's certificate bindings;
+  sibling services keep their independent certificates.

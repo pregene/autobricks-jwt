@@ -78,7 +78,9 @@ These failures occur before APIKEY authorization. The service normally closes th
 | 8024 | `CONNECTION_IDLE_TIMEOUT` | Close | The configured sliding idle timeout expired. |
 | 8025 | `CONNECTION_LIFETIME_EXCEEDED` | Close | The configured maximum connection lifetime expired. |
 | 8026 | `CERTIFICATE_CONNECTION_EXPIRED` | Close | The connection reached the certificate `notAfter` time. |
-| 8027–8029 | Reserved | Internal | Reserved for certificate and connection-identity errors. |
+| 8027 | `CERTIFICATE_REGISTRATION_KEY_INVALID` | Close | The temporary certificate registration key is missing, expired, consumed, mismatched, or invalid. |
+| 8028 | `SERVICE_CERTIFICATE_BINDING_MISMATCH` | Close | The certificate fingerprint, `service_id`, `client_id`, APIKEY, or operation URI SAN does not resolve to one service binding. |
+| 8029 | `CERTIFICATE_HANDOVER_FAILED` | Internal | The verified pending-to-active certificate transition could not complete atomically. |
 
 ## 8030–8039: APIKEY Authorization
 
@@ -97,7 +99,7 @@ These failures occur before APIKEY authorization. The service normally closes th
 | 8041 | `SERVICE_REGISTRATION_INACTIVE` | Generic | The service registration is inactive. |
 | 8042 | `SUBJECT_TYPE_FORBIDDEN` | Public | The service cannot issue for the requested subject type. |
 | 8043 | `FIELD_QUERY_FORBIDDEN` | Public | The service cannot query one or more requested fields. |
-| 8044 | `CLIENT_CERTIFICATE_PROVISIONING_FAILED` | Internal | Client certificate issuance, download, verification, or registration failed. |
+| 8044 | `SERVICE_CERTIFICATE_PROVISIONING_FAILED` | Internal | Service certificate issuance, download, verification, persistence, delivery, or activation preparation failed. |
 | 8045–8049 | Reserved | Internal | Reserved for service-registration errors. |
 
 ## 8050–8059: JWT Issuance
@@ -164,8 +166,9 @@ These failures occur before APIKEY authorization. The service normally closes th
 
 - Map codes `8010`–`8026` to connection closure when the application channel is not authenticated.
 - Return `8030` for all missing, unknown, malformed, revoked, or mismatched APIKEY authentication failures; do not reveal which condition occurred.
-- Return `8060` for both expired and nonexistent sessions and write the same `JWT_SESSION_INVALID` TrueLog event.
-- Include `error_code: 8060` in every `JWT_SESSION_INVALID` TrueLog event.
+- Return `8060` for both expired and nonexistent sessions. When audit logging
+  is enabled, write the same `JWT_SESSION_INVALID` audit event for both cases.
+- Include `error_code: 8060` in every emitted `JWT_SESSION_INVALID` event.
 - Map internal codes to `8000` or `8009` when a safe client response is required.
 - Never use a database, Cache, HSM, OCSP, or TrueLog error string as a client message.
 - Reserved codes must not be emitted until this document assigns them a stable name and meaning.

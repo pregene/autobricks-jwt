@@ -135,10 +135,10 @@ the operating server's syslog with redacted context. Tokens, APIKEYs, decrypted
 claims, token keys, and IVs are never logged.
 
 A revocation request for an already missing, expired, or revoked session uses
-`JWT_SESSION_INVALID` with error code `8060`. When TrueLog is installed and
-configured, that invalid-session event is appended and its receipt is stored in
-the corresponding local record. The event never distinguishes the underlying
-session state.
+`JWT_SESSION_INVALID` with error code `8060`. When audit logging is enabled and
+TrueLog is installed and configured, that invalid-session event is appended and
+its receipt is stored in the corresponding local record. The event never
+distinguishes the underlying session state.
 
 ## Errors
 

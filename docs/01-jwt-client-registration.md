@@ -74,8 +74,8 @@ The separation provides the following security properties:
   revocation.
 - Compromise of a WRITE APIKEY does not automatically grant field-query or
   session-inspection permission.
-- READ and WRITE clients can use separate certificates, source restrictions,
-  process identities, and deployment boundaries.
+- Services under READ and WRITE clients can use separate certificates, source
+  restrictions, process identities, and deployment boundaries.
 - Operational review can distinguish state-changing activity from common query
   activity.
 
@@ -271,8 +271,6 @@ interfaces do not expose client-management operations.
 - Autobricks Cache is installed and valid as required by the service.
 - TLS and mutual TLS are selectable only when the Autobricks PKI client and the
   required JWT Service certificate configuration are available.
-- The invocation working directory can receive a certificate package when
-  mutual TLS is selected.
 
 ## Registration Input
 
@@ -292,16 +290,17 @@ Client registration supports four credential types:
 | Unix domain socket | Local socket access permission and operating-system peer UID with optional GID |
 | TCP | Connecting source address within the registered source CIDR |
 | TLS | Connecting source address within the registered source CIDR after establishment of the server-authenticated TLS channel |
-| Mutual TLS | Issued client certificate validated by chain, validity, purpose, AIA OCSP status, registered fingerprint, and operation URI SAN |
+| Mutual TLS | Service-specific certificate validated by chain, validity, purpose, AIA OCSP status, registered fingerprint, and operation URI SAN |
 
 The selected type defines how the client reaches the JWT Service and which
 connection evidence is checked before the `client_id` and service APIKEY are
 authorized. The `client_id` identifies the registration but is not itself the
 credential. TCP authenticates the client source with the registered source
 CIDR. TLS adds server authentication and channel encryption while retaining the
-registered source CIDR as the client credential. Mutual TLS uses the client
-certificate as the client credential and binds its verified fingerprint and
-operation URI SAN to the registered `client_id`.
+registered source CIDR as the client credential. Mutual TLS uses a
+service-specific certificate as the connection credential and binds its
+verified fingerprint to `service_id`. The service remains bound to the parent
+`client_id` and its operation URI SAN.
 
 Source CIDR remains mandatory for every registration, including Unix domain
 socket and mutual TLS registrations. For mutual TLS it is an additional source
@@ -358,36 +357,21 @@ When Unix domain socket is selected, the registration also requires the peer
 UID and may include a peer GID. The server verifies operating-system peer
 credentials when that transport is used.
 
-## Mutual TLS Certificate Provisioning
+## Mutual TLS Certificate Capability
 
-When mutual TLS is selected, `ab-jwtd` provisions a client certificate through
-Autobricks PKI. The certificate contains exactly one JWT operation URI SAN.
+Selecting mutual TLS permits services under this `client_id` to receive
+service-specific certificates. It does not issue a certificate during client
+registration because no `service_id` exists yet. Certificate provisioning
+occurs separately for every service registration, and each certificate
+contains exactly one JWT operation URI SAN.
 
 | Operation class | Required URI SAN |
 | --- | --- |
 | `READ` | `urn:autobricks:jwt:read` |
 | `WRITE` | `urn:autobricks:jwt:write` |
 
-Provisioning must complete all of the following steps:
-
-1. Issue a client-authentication certificate.
-2. Obtain the certificate SHA-256 fingerprint from the issuance result.
-3. Download the certificate package with `abpki-cli`.
-4. Verify the certificate and private key match.
-5. Verify the trust chain, client-authentication purpose, validity interval,
-   exact URI SAN, and AIA OCSP URL.
-6. Confirm that the package contains the certificate, private key, and trust
-   chain.
-7. Register the verified fingerprint and URI SAN with the client record.
-
-The certificate package is returned through the two management sockets to the
-interactive `ab-jwt-cli` process. That process writes `CLIENT_NAME.tar.gz` into
-the directory from which it was invoked. The services do not write to an
-arbitrary caller-supplied filesystem path.
-
-The package contains private key material. Its contents are never printed,
-logged, stored in the JWT database, or returned in JSON. The result contains
-only verified certificate metadata and the actual downloaded file path.
+The complete provisioning and delivery procedure is defined in
+[Service Certificate](16-service-certificate.md).
 
 TLS without mutual TLS does not issue a client certificate. It uses the JWT
 Service server certificate for transport protection; later JWT operations still
@@ -408,8 +392,7 @@ The accepted registration request uses the following structure.
     "MTLS"
   ],
   "peer_uid": 1001,
-  "peer_gid": 1001,
-  "uri_san": "urn:autobricks:jwt:write"
+  "peer_gid": 1001
 }
 ```
 
@@ -418,8 +401,8 @@ placeholders are not emitted.
 
 ## Registration Response
 
-The registration response returns the created client identity and applicable
-certificate delivery information.
+The registration response returns the created client identity. Certificate
+information is returned later by service registration.
 
 ```json
 {
@@ -430,19 +413,9 @@ certificate delivery information.
   "transports": [
     "UNIX",
     "MTLS"
-  ],
-  "certificate": {
-    "fingerprint": "<sha256-fingerprint>",
-    "uri_san": "urn:autobricks:jwt:write",
-    "not_after": "<rfc3339-time>",
-    "download_file": "/invocation/directory/web-server-write.tar.gz"
-  }
+  ]
 }
 ```
-
-The certificate object is present only after actual mutual TLS certificate
-issuance, download, and verification succeed. Placeholder certificate results
-must never be returned by the implemented service.
 
 The request and response remain separate contracts. Generated identifiers,
 timestamps, certificate metadata, and file paths belong only to the response.
@@ -460,13 +433,11 @@ including:
 - Required source CIDR
 - Client-specific keep-alive timeout
 - Unix peer UID and optional GID when applicable
-- Certificate SHA-256 fingerprint and URI SAN when mutual TLS applies
-- Certificate validity metadata required for lifecycle enforcement
 - Active registration state
 - Creation and modification timestamps
 
-The database does not store a client certificate private key or the downloaded
-certificate package.
+Service certificate state is stored separately because one client can own
+multiple service registrations and each service can have its own certificate.
 
 ## Runtime Enforcement
 
@@ -483,11 +454,11 @@ For mutual TLS, connection acceptance requires all of the following:
 - Current, valid, signed OCSP status of `GOOD`
 - Exact match to the registered SHA-256 fingerprint
 - Exact match between URI SAN and registered operation class
-- Active client record
+- Active service certificate, service, and parent client records
 - Source address within the registered CIDR
 
-A certificate issued by the PKI but not present in an active client record is
-not authorized.
+A certificate issued by the PKI but not present in an active service-certificate
+record is not authorized.
 
 ## Failure Handling
 
@@ -500,11 +471,6 @@ The following errors apply while creating a client registration.
 | 8002 | `UNSUPPORTED_OPERATION` | Public | Reject an unknown or unsupported management operation. |
 | 8006 | `REQUEST_TIMEOUT` | Public | Reject a registration that exceeds the management request deadline. |
 | 8009 | `SERVICE_UNAVAILABLE` | Generic | Reject registration when a required management or dependency service is temporarily unavailable. |
-| 8044 | `CLIENT_CERTIFICATE_PROVISIONING_FAILED` | Internal | Record certificate issuance, download, package inspection, certificate verification, or fingerprint registration failure. Map the client response to `8000` without exposing the internal cause. |
-
-A partially provisioned certificate does not produce a fingerprint record or a
-successful registration response. Secrets, private keys, certificate contents,
-and internal dependency errors are excluded from client-visible failures.
 
 ## Logging and Audit
 
@@ -515,3 +481,7 @@ logged.
 
 JWT client registration does not create a TrueLog audit event under
 the JWT Service. It does not write a TrueLog record or create a TrueLog receipt.
+
+Service certificate issuance and renewal begin after service registration. See
+[Service Certificate](16-service-certificate.md) and
+[Certificate Renewal](15-certificate-renewal.md).

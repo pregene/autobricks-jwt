@@ -14,6 +14,12 @@ Each lifecycle process is defined in one document. Process documents use the sam
 | 8 | Operational log query | [Operational Log Query](08-operational-log-query.md) |
 | 9 | Audit log query | [Audit Log Query](09-audit-log-query.md) |
 | 10 | Runtime operation definitions | [Operation Definitions](10-operation-definitions.md) |
+| 11 | Data backup | [Data Backup](11-data-backup.md) |
+| 12 | Data security-key rotation | [Data Security-Key Rotation](12-data-security-key-rotation.md) |
+| 13 | Log Drain cycle | [Log Drain Cycle](13-log-drain-cycle.md) |
+| 14 | Recovery | [Recovery](14-recovery.md) |
+| 15 | Certificate renewal | [Certificate Renewal](15-certificate-renewal.md) |
+| 16 | Service certificate | [Service Certificate](16-service-certificate.md) |
 
 Shared architecture, operation, error, logging, dependency, and database rules
 remain authoritative in the repository root documents. Runtime operation names,

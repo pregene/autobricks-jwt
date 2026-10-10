@@ -2,7 +2,28 @@
 
 ## Scope
 
-Autobricks JWT writes security audit events to Autobricks TrueLog and stores the returned append receipt in its local database. The TrueLog event and the local receipt record have separate formats and responsibilities.
+When audit logging is enabled, Autobricks JWT writes security audit events to
+Autobricks TrueLog and stores the returned append receipt in its local
+database. The TrueLog event and the local receipt record have separate formats
+and responsibilities.
+
+## Installation Logging Profile
+
+Installation requires an explicit enabled or disabled selection for request,
+query, issuance, and audit logs. A disabled category creates no historical log
+record or operational activity syslog entry for later lookup. Activity that
+occurred under a disabled installation category cannot be reconstructed.
+
+When audit logging is disabled, the service does not create a local audit
+record, submit an audit event to TrueLog, or store a TrueLog receipt. When audit
+logging is enabled but the TrueLog client is unavailable by installation
+profile, the reduced-capability behavior in [DEPENDENCIES.md](DEPENDENCIES.md)
+applies.
+
+Connection access logging is always enabled and cannot be disabled. Every
+accepted or rejected connection produces a redacted syslog access entry.
+Optional activity-log settings do not suppress classified service failures,
+which always follow the syslog error contract in [ERROR.md](ERROR.md).
 
 Audit evidence is created for:
 
@@ -104,6 +125,10 @@ security action. The audit evidence identifies the inspected operation without
 recording the encrypted token, token key, decrypted payload, or individual
 claim values. The returned TrueLog receipt is stored with the corresponding
 SQLCipher inspection record.
+
+Privileged complete-token inspection is unavailable when audit logging is
+disabled or a required TrueLog append and receipt cannot complete. Disabling
+audit logging never converts this operation into an unaudited inspection.
 
 ## Syslog Service Error Logging
 
@@ -207,17 +232,18 @@ Receipt validation requires:
 - `after.filesize` is greater than `before.filesize`.
 - Both checksums are 64 lowercase hexadecimal SHA-256 values.
 
-The local database record stores all receipt fields without modification. The service and file form the relative metadata path used for later verification:
+The local database record stores all receipt fields without modification. The
+service and file identify the corresponding WORM file on the Autobricks TrueLog
+server:
 
 ```text
 autobricks-jwt/truelog-YYYY-MM-DD.log
 ```
 
-Example verification command:
-
-```sh
-ab-truelog-cli info --file autobricks-jwt/truelog-YYYY-MM-DD.log
-```
+An authorized operator reads the actual audit record by signing in directly to
+the TrueLog server. `ab-truelog-cli info --file SERVICE/FILE` returns only the
+file's current stored WORM metadata and latest checksum. It does not read an
+audit record or verify one historical append receipt.
 
 ## Local Receipt State
 

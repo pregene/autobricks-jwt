@@ -257,10 +257,13 @@ sequenceDiagram
 
     alt Session is missing or expired
         J->>O: JWT_SESSION_INVALID with error code 8060
-        opt TrueLog is installed and configured
-            J->>T: Append JWT_SESSION_INVALID
-            T-->>J: Durable append receipt
-            J->>S: Store receipt with invalid-session record
+        opt Audit logging is enabled
+            J->>O: Write JWT_SESSION_INVALID audit-event copy
+            opt TrueLog is installed and configured
+                J->>T: Append JWT_SESSION_INVALID
+                T-->>J: Durable append receipt
+                J->>S: Store receipt with invalid-session record
+            end
         end
         J-->>C: SESSION_NOT_FOUND_OR_EXPIRED
     else Active session exists
@@ -622,12 +625,14 @@ Every classified failure writes its assigned `error_code` and `error_name` to
 the operating server's syslog using redacted context. Syslog is operational
 diagnostic output and is not audit evidence.
 
-An expired or nonexistent session produces the common
-`JWT_SESSION_INVALID` event with error code `8060`. The response and event never
-distinguish expiration from nonexistence. When TrueLog is installed and
-configured, the event is appended there and its validated receipt is stored in
-the corresponding local invalid-session record. Without TrueLog, the event is
-written only to syslog and no receipt is created.
+An expired or nonexistent session always produces the common classified
+failure `8060`. When audit logging is enabled, it also produces the common
+`JWT_SESSION_INVALID` event; the response and event never distinguish
+expiration from nonexistence. When TrueLog is installed and configured, the
+event is appended there and its validated receipt is stored in the
+corresponding local invalid-session record. With audit logging enabled but
+without TrueLog, the audit-event copy is written only to syslog and no receipt
+is created.
 
 ## Errors
 

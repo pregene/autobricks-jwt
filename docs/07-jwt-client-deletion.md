@@ -136,8 +136,9 @@ and `ab-jwtd` management permission authorize the operation.
 
 1. Authenticate the local management connection and authorized operator.
 2. Validate `request_id` and the selected `client_id`.
-3. Load the active client, registered fingerprint, transport identities, bound
-   services, APIKEYs, active connections, and dependent active sessions.
+3. Load the active client, transport identities, bound services, service
+   certificate fingerprints, APIKEYs, active connections, and dependent active
+   sessions.
 4. Reject a missing, already deleted, stale, or unauthorized client selection.
 5. Block new connections and management or runtime operations for that
    `client_id`.
@@ -148,15 +149,16 @@ and `ab-jwtd` management permission authorize the operation.
    `token_id` MAP entries.
 8. For a READ client, remove all field-query authorizations without changing
    sessions issued by another WRITE client.
-9. Mark the client registration `DELETED`, record `deleted_at`, and prevent its
-   fingerprint, Unix peer identity, source CIDR, or other registered connection
-   identity from authenticating again.
+9. Retire every active or pending service certificate under the client, mark
+   the client registration `DELETED`, record `deleted_at`, and prevent its Unix
+   peer identity, source CIDR, or service certificate from authenticating
+   again.
 10. Close every active connection bound to that client so keep-alive cannot
     continue after deletion.
 11. Remove every runtime Cache entry owned by the client and its deleted
-    services, including client identity, fingerprint, service, APIKEY, field
-    allowlist, subject-source, active-session, `token_id` MAP, token-key, and
-    token-validation Cache entries.
+    services, including client identity, service-certificate fingerprints,
+    service, APIKEY, field allowlist, subject-source, active-session, `token_id`
+    MAP, token-key, and token-validation Cache entries.
 12. Release service-owned Cache Definitions and Database Connection resources
     after their pending work has reached the deletion-safe state. A shared
     Cache or Connection remains active for other registered owners, but every
@@ -176,8 +178,8 @@ authorize, locate, or reactivate the deleted client, service, APIKEY, or session
 Client deletion clears every Cache layer associated with the selected
 `client_id` and its cascade deletion set:
 
-- Client registration, transport identity, certificate fingerprint, and source
-  CIDR lookup entries
+- Client registration, transport identity, service-certificate fingerprint,
+  and source CIDR lookup entries
 - Bound service and APIKEY authorization entries
 - READ field-allowlist entries
 - WRITE subject-source Cache and MAP entries owned by deleted services
@@ -188,7 +190,8 @@ Client deletion clears every Cache layer associated with the selected
 Cache cleanup does not physically delete SQLCipher history, token versions,
 keys, revocation records, or stored audit receipts. Those records remain
 durable historical evidence and cannot be used to repopulate an active Cache
-entry for a deleted client.
+entry for a deleted client. Enabled request, issuance, query, and audit
+logs remain only until their normal 90-day Drain applies.
 
 When a Cache Definition or Database Connection is shared, deletion removes only
 the deleted client's ownership references and entries. The shared resource is
@@ -197,11 +200,12 @@ remove or invalidate Cache data owned by another active client.
 
 ## Historical Records and Logs
 
-Client deletion does not delete records that were created before the deletion:
+Client deletion does not immediately delete records that were created before
+the deletion:
 
-- JWT creation request history and issuance history in SQLCipher
+- Enabled JWT request and issuance logs still within their retention period
 - Issued token and token-version history
-- Token-key, IV, session-state, revocation, and error history
+- Token-key, IV, session-state, and revocation history
 - Previously stored TrueLog append receipts
 - Operating server syslog records
 - Immutable Autobricks TrueLog audit evidence
@@ -213,7 +217,8 @@ APIKEY authorization, issuance, query error, or revocation relationship.
 Cache cleanup removes only active runtime copies and lookup paths. It does not
 apply a deletion request to the operating system's log retention facility or
 to Autobricks TrueLog. Log retention and authorized log retrieval remain
-governed by their respective operational systems.
+governed by their respective operational systems. Internal SQLCipher logs are
+automatically removed by the 90-day Drain contract.
 
 ## Deletion Result
 
@@ -247,10 +252,11 @@ removed from the default active-only list and remains visible through the
 - Deleted service IDs and revoked APIKEYs cannot be restored.
 - Re-registering an equivalent client creates a new `client_id`, service IDs,
   APIKEYs, and certificate identity when certificates are used.
-- The deleted certificate fingerprint is retained only as protected historical
-  evidence and can never authenticate an active client.
-- Existing issuance, token, key, revocation, error, and TrueLog receipt records
-  remain connected to their historical client and service IDs.
+- Retired service certificate fingerprints are retained only as protected
+  historical evidence and can never authenticate an active service.
+- Existing token, key, and revocation records remain connected to their
+  historical client and service IDs. Enabled issuance and TrueLog
+  receipt logs retain those relationships until their 90-day Drain.
 - Previously written operational syslog records remain unchanged.
 - Client deletion does not delete or rewrite immutable TrueLog evidence.
 

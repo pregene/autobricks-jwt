@@ -6,6 +6,11 @@ Autobricks JWT writes operational events and classified service failures to the
 Linux operating server's syslog. A systemd deployment queries those records
 with `journalctl` using the `autobricks-jwt.service` unit.
 
+Request, query, issuance, and audit activity appears only when its corresponding
+installation logging category is enabled. Connection access logs and
+classified service-error logs are always enabled and are not suppressed by
+those category selections.
+
 Operational logs support service monitoring and failure investigation. They are
 not immutable audit evidence and do not contain a TrueLog append receipt.
 
@@ -118,6 +123,10 @@ not attempt to reconstruct a distinction that the service intentionally does
 not log.
 
 ## Operational Event Query
+
+The following activity queries return records only when the applicable
+installation log category was enabled when the activity occurred. Missing
+entries from a disabled category cannot be reconstructed later.
 
 Find successful issuance records written to the local journal:
 

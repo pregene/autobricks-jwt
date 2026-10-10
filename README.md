@@ -63,7 +63,11 @@ flowchart TB
     Receipt --> SQLCipher
 ```
 
-Autobricks Cache is required. PKI and TrueLog integrations are conditional as defined in [DEPENDENCIES.md](DEPENDENCIES.md). Without the PKI client, only Unix domain socket and TCP are available. Without the TrueLog client, audit-event copies remain in syslog and no immutable audit receipt is stored.
+Autobricks Cache is required. PKI and TrueLog integrations are conditional as
+defined in [DEPENDENCIES.md](DEPENDENCIES.md). Without the PKI client, only Unix
+domain socket and TCP are available. With audit logging enabled but without the
+TrueLog client, audit-event copies remain in syslog and no immutable audit
+receipt is stored.
 
 ## Service Registration
 
@@ -99,7 +103,7 @@ sequenceDiagram
     J->>S: Resolve registered CLIENT_JSON or DATABASE source
     S-->>J: Source values
     J->>J: Build and encrypt the complete payload internally
-    J->>D: Store token, key, IV, and issuance history in SQLCipher
+    J->>D: Store token, key, IV, and session state in SQLCipher
     J->>C: Insert active session and token_id MAP entry
     J->>L: JWT_ISSUED event copy
     opt TrueLog client is configured
@@ -163,7 +167,8 @@ required. See [INSTALL.md](INSTALL.md).
 - Prevents the requesting service from reading the complete token payload.
 - Authenticates issuance requests with the APIKEY from the WRITE registration.
 - Persists JWT session records in the configured database.
-- Writes a successful issuance event to syslog and, when the Autobricks TrueLog client is configured, to Autobricks TrueLog.
+- When audit logging is enabled, writes a successful issuance event to syslog
+  and, when the Autobricks TrueLog client is configured, to Autobricks TrueLog.
 
 ## Field Query
 
@@ -179,13 +184,17 @@ required. See [INSTALL.md](INSTALL.md).
 
 - Returns the same error for an expired session and a nonexistent session.
 - Does not reveal whether an invalid session previously existed.
-- Writes the common expired-or-nonexistent session error to syslog and, when the Autobricks TrueLog client is configured, to Autobricks TrueLog.
+- Writes the classified expired-or-nonexistent session failure to syslog and,
+  when audit logging and the Autobricks TrueLog client are enabled, writes the
+  common audit event to Autobricks TrueLog.
 
 ## Cache and Database
 
 - Uses [Autobricks Cache](https://github.com/pregene/autobricks-cache) for MAP-based in-memory session lookup and configurable retention.
 - Uses the Connection-owned WRITE Queue for Cache Definitions configured with asynchronous persistence.
-- Commits JWT request history, issuance history, token keys, IVs, and audit receipts to SQLCipher independently of Cache persistence.
+- Commits enabled JWT request and issuance logs, token keys, IVs, and enabled
+  audit receipts to SQLCipher independently of Cache persistence. Internal log
+  records follow the 90-day Drain contract.
 - Provides configurable Cache Definitions for each deployment.
 - Supports independent Caches for optional source data such as users, accounts, and devices.
 - Keeps source-data Cache loading and retention separate from JWT session retention.
@@ -214,7 +223,8 @@ TLS and mutual TLS require an installed and configured Autobricks PKI client. Wi
 
 ## True Log Events
 
-When the Autobricks TrueLog client is installed and configured, Autobricks JWT writes audit evidence for:
+When audit logging is enabled and the Autobricks TrueLog client is installed
+and configured, Autobricks JWT writes audit evidence for:
 
 1. Successful JWT issuance
 2. Expired or nonexistent session request
@@ -222,7 +232,11 @@ When the Autobricks TrueLog client is installed and configured, Autobricks JWT w
 
 Successful field queries, policy evaluation, session retention extension, and Cache activity do not create JWT TrueLog events.
 
-Without the Autobricks TrueLog client, these events are written only to syslog and no immutable audit evidence or append receipt is produced. For secure deployment requirements and installation order, see [DEPENDENCIES.md](DEPENDENCIES.md).
+With audit logging enabled but without the Autobricks TrueLog client, these
+events are written only to syslog and no immutable audit evidence or append
+receipt is produced. With audit logging disabled, no audit event or receipt is
+created. For secure deployment requirements and installation order, see
+[DEPENDENCIES.md](DEPENDENCIES.md).
 
 ## Recommended Dedicated Deployment
 

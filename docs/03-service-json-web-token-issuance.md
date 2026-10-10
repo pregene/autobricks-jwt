@@ -58,8 +58,9 @@ the registered JWT encryption profile or JOSE algorithm parameters.
 
 `request_id` is required. Autobricks JWT does not generate a JWT for a request
 that omits it or supplies an invalid value. The identifier is unique within the
-registered client and is stored with both the request history and the resulting
-issuance record.
+registered client and is stored with the request-processing state and resulting
+token record. When request logging is enabled, it is also stored in the request
+log.
 
 ### DATABASE Source Request
 
@@ -153,14 +154,16 @@ The WRITE client is responsible for the correctness and integrity of the
 subject data it supplies. Autobricks JWT validates the registered structure but
 does not independently verify those values against a Database.
 
-## SQLCipher Request History
+## SQLCipher Request State and Optional Request Log
 
-Autobricks JWT maintains a separate SQLCipher `requests` table for JWT creation
-requests. After the request structure and `request_id` are validated, a request
-record is created before token generation begins. This records when the request
-arrived independently of whether issuance later succeeds or fails.
+Autobricks JWT retains the minimum SQLCipher request state required to enforce
+`request_id` idempotency and preserve the relationship to the resulting token.
+When request logging is enabled, it also creates a request log before token
+generation begins. The optional log records when the request arrived
+independently of whether issuance later succeeds or fails and is subject to the
+90-day Log Drain contract.
 
-The request record contains at least:
+The enabled request log contains at least:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
@@ -175,12 +178,14 @@ The request record contains at least:
 | `jti` | Conditional | Resulting session identifier after successful issuance |
 
 The APIKEY and raw token-generation conditions are used during processing but
-are not stored in the request-history row. They may contain credentials or
-subject information and must not appear in request-history diagnostics.
+are not stored in the request log. They may contain credentials or subject
+information and must not appear in request-log diagnostics.
 
-The pair of `client_id` and `request_id` is unique. A repeated request must not
-silently create an additional token. Duplicate-request response and retry
-behavior must preserve the original request and issuance relationship.
+The pair of `client_id` and `request_id` is unique within the enforced
+idempotency window. A repeated request must not silently create an additional
+token. Duplicate-request response and retry behavior must preserve the original
+request and token relationship independently of whether request logging is
+enabled.
 
 ## Validation
 
@@ -299,9 +304,11 @@ Issuance follows this order:
 
 1. Validate the framing, required `client_id`, `request_id`, and minimum request
    structure without persisting the APIKEY or condition values.
-2. Insert the SQLCipher request-history row with `received_at` and `RECEIVED`.
+2. Create the minimum SQLCipher request-processing state and, when request
+   logging is enabled, insert the request log with `received_at` and `RECEIVED`.
 3. Authenticate and authorize the connection, client, service, APIKEY, and
-   WRITE operation. A rejection updates the existing request row.
+   WRITE operation. A rejection updates the minimum request state and the
+   enabled request log.
 4. Validate the registered subject source and token-generation conditions.
 5. Resolve the subject record from the configured Cache/MAP and Database SELECT,
    or validate the supplied CLIENT_JSON object.
@@ -320,17 +327,20 @@ Issuance follows this order:
     Authenticated Data, produce a 128-bit authentication tag, and assign a
     unique UUID `kid` to the SQLCipher key record.
 12. Commit the encrypted token, recoverable token-specific encryption key,
-   issuance/session history, and successful request relationship to SQLCipher.
+   token/session state, and successful request relationship to SQLCipher.
    SQLCipher protects the key at rest.
 13. Insert the active session into Autobricks Cache with `token_id` as its
     required Session MAP key.
-14. Write the `JWT_ISSUED` event to syslog for operational visibility.
-15. When TrueLog is installed and configured, append the same `JWT_ISSUED` event,
-   validate its receipt, and store that receipt in the corresponding local
-   issuance record.
-16. Set the request record to `SUCCEEDED`, store its `completed_at` and
-    `token_id`, and return both `token_id` and the encrypted token without
-    returning the plaintext payload.
+14. When issuance logging is enabled, write the redacted issuance activity to
+    its SQLCipher log and syslog.
+15. When audit logging is enabled, create the `JWT_ISSUED` audit event. Write
+    its operational copy to syslog and, when TrueLog is installed and
+    configured, append it to TrueLog, validate its receipt, and store that
+    receipt in the corresponding local audit record.
+16. Set the minimum request state to `SUCCEEDED`; when request logging is
+    enabled, store its `completed_at` and `token_id` in the request log. Return
+    both `token_id` and the encrypted token without returning the plaintext
+    payload.
 
 The plaintext payload, APIKEY, JWT key, source record, token, and `jti` are not
 written to syslog or TrueLog.
@@ -399,7 +409,10 @@ sequenceDiagram
 
     C->>J: client_id, apikey, request_id, source input
     J->>J: Validate framing and required request fields
-    J->>S: Insert request status RECEIVED with received_at
+    J->>S: Store minimum request-processing state
+    opt Request logging is enabled
+        J->>S: Insert request log RECEIVED with received_at
+    end
     J->>J: Validate transport credential, client_id, APIKEY, and WRITE permission
 
     alt DATABASE source
@@ -420,17 +433,26 @@ sequenceDiagram
     J->>J: Load registered encryption profile
     J->>J: Generate profile-sized CEK, 96-bit IV, and UUID kid
     J->>J: Encrypt with registered dir plus AES-GCM profile
-    J->>S: Commit token, token_key, iv, issuance history, and active state
+    J->>S: Commit token, token_key, iv, and session state
     J->>A: Insert active session and token_id MAP entry
-    J->>O: Write JWT_ISSUED operational event
-
-    opt TrueLog is installed and configured
-        J->>T: Append JWT_ISSUED audit event
-        T-->>J: Durable append receipt
-        J->>S: Validate and store receipt
+    opt Issuance logging is enabled
+        J->>S: Store redacted issuance log
+        J->>O: Write redacted issuance activity
     end
 
-    J->>S: Set request SUCCEEDED, completed_at, and token_id
+    opt Audit logging is enabled
+        J->>O: Write JWT_ISSUED audit-event copy
+        opt TrueLog is installed and configured
+            J->>T: Append JWT_ISSUED audit event
+            T-->>J: Durable append receipt
+            J->>S: Validate and store receipt
+        end
+    end
+
+    J->>S: Set minimum request state SUCCEEDED
+    opt Request logging is enabled
+        J->>S: Set request log SUCCEEDED, completed_at, and token_id
+    end
     J-->>C: token_id and complete Base64URL JWE token
 ```
 
@@ -460,14 +482,15 @@ The logical plaintext payload exists only inside Autobricks JWT:
 The caller cannot request generated JWT metadata through source input. The
 complete object is encrypted before it crosses the JWT Service boundary.
 
-## SQLCipher Issuance History
+## SQLCipher Token State and Optional Issuance Log
 
 Every successfully generated token is stored in the JWT Service's SQLCipher
-Database before it is returned. SQLCipher is the durable issuance-history and
-session-record store; Autobricks Cache is the active-session acceleration and
-Retention layer.
+Database before it is returned. SQLCipher is the durable token, key, and
+session-state store; Autobricks Cache is the active-session acceleration and
+Retention layer. This required token state is independent of the optional
+issuance log.
 
-The persisted issuance record contains at least these required fields:
+The persisted token record contains at least these required fields:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
@@ -497,11 +520,16 @@ and manage the token:
 - The registered service, WRITE `client_id`, and subject type bindings.
 - Issue time, absolute expiration, current session state, and revocation time
   when applicable.
-- The issuance processing state and audit-receipt state.
-- The validated TrueLog receipt when audit evidence is available.
+- The token processing state.
 
-The complete plaintext payload is not persisted as issuance history. The token,
-token encryption key, and receipt are never written to syslog or TrueLog.
+When issuance logging is enabled, a separate redacted issuance log records the
+permitted identifiers, result, and timestamps for no more than 90 days. When
+audit logging is enabled, the separate local audit record contains its audit
+state and validated TrueLog receipt when available. Neither optional log is
+required to validate an active token.
+
+The complete plaintext payload is not persisted. The token, token encryption
+key, and receipt are never written to syslog or TrueLog.
 
 The SQLCipher Database key is obtained through the HSM-managed key path already
 defined for Autobricks JWT. Each token nevertheless has its own independent
@@ -530,7 +558,7 @@ This is a logical SQLCipher record, not an API response or log format. The
 `content_encryption_key` column is secret data made available only inside
 `ab-jwtd` after SQLCipher has been opened successfully.
 
-A conceptual issuance-history record therefore includes:
+A conceptual required token record therefore includes:
 
 ```json
 {
@@ -626,11 +654,11 @@ subject-source MAP configured during service registration and is not an input
 in process 02.
 
 A session is considered issued only after its SQLCipher record and Cache record
-have both been created successfully. Cache is not the only copy of issuance
-history. A later missing or expired Cache record is treated as an invalid
-session and is not restored merely because its SQLCipher history record exists.
-Expiration or eviction removes active Cache access while preserving the durable
-issuance history required for operation and audit review.
+have both been created successfully. Cache is not the only copy of token state.
+A later missing or expired Cache record is treated as an invalid session and is
+not restored merely because its SQLCipher token record exists. Expiration or
+eviction removes active Cache access while preserving durable token state
+according to its lifecycle.
 
 ## Response
 
@@ -681,12 +709,15 @@ and session checks.
 
 Successful issuance creates:
 
-- One SQLCipher request-history record linked by `request_id`.
-- One durable SQLCipher token, key, IV, issuance-history, and session record.
+- One minimum SQLCipher request-state record linked by `request_id`.
+- One durable SQLCipher token, key, IV, and session-state record.
 - One active Cache session and its Session MAP entry.
-- One `JWT_ISSUED` syslog event.
-- When TrueLog is configured, one `JWT_ISSUED` TrueLog event and its validated
-  receipt stored in the corresponding local record.
+- When request logging is enabled, one SQLCipher request log.
+- When issuance logging is enabled, one SQLCipher issuance log and its redacted
+  syslog activity entry.
+- When audit logging is enabled, one `JWT_ISSUED` syslog audit-event copy and,
+  when TrueLog is configured, one TrueLog event with its validated receipt
+  stored in the corresponding local audit record.
 
 A rejected request does not create a session or `JWT_ISSUED` audit event.
 Classified failures are written to syslog using their assigned error code and
@@ -706,14 +737,15 @@ The successful event format is defined by `LOGGING.md`:
 }
 ```
 
-The event is written to syslog and, when available, Autobricks TrueLog. The
-syslog copy is operational visibility and is not audit evidence. The TrueLog
-append and locally stored receipt are the audit evidence.
+When audit logging is enabled, the event is written to syslog and, when
+available, Autobricks TrueLog. The syslog copy is operational visibility and is
+not audit evidence. The TrueLog append and locally stored receipt are the audit
+evidence.
 
-Without an installed and configured TrueLog client, issuance writes the event
-only to syslog and does not fabricate an audit receipt. An enabled TrueLog
-delivery or receipt-storage failure follows the audit failure and reconciliation
-rules in `LOGGING.md`.
+With audit logging enabled but without an installed and configured TrueLog
+client, issuance writes the audit-event copy only to syslog and does not
+fabricate an audit receipt. An enabled TrueLog delivery or receipt-storage
+failure follows the audit failure and reconciliation rules in `LOGGING.md`.
 
 ## Errors
 
@@ -789,8 +821,9 @@ administrative exception to the normal client rule: Web Services, READ clients,
 WRITE clients, and network transports can never request a complete decrypted
 payload.
 
-The administrator obtains `request_id` and `token_id` from the local operational
-log and invokes the local management client with `sudo`:
+When issuance logging is enabled, the administrator can obtain `request_id` and
+`token_id` from the local operational log and invoke the local management
+client with `sudo`:
 
 ```sh
 sudo ab-jwt-cli inspect-token \
@@ -829,8 +862,10 @@ JWT metadata and claims, so it must be treated as sensitive. `ab-jwt-cli` must
 not copy it to syslog, TrueLog, command arguments, shell history, crash output,
 or a temporary file. The SQLCipher inspection record identifies the
 administrator, `request_id`, `token_id`, inspection time, and result, but never
-the token, `token_key`, or decrypted field values. TrueLog evidence is required;
-the returned TrueLog receipt is stored with the SQLCipher inspection record.
+the token, `token_key`, or decrypted field values. Audit logging and TrueLog
+evidence are required; the returned TrueLog receipt is stored with the
+SQLCipher inspection record. Privileged inspection is unavailable when those
+audit requirements cannot be satisfied.
 
 This function exists only for privileged local verification of a generated
 token. It does not activate an expired or revoked session, extend Cache
