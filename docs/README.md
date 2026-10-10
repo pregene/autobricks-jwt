@@ -15,23 +15,6 @@ Each lifecycle process is defined in one document. Process documents use the sam
 | 9 | Audit log query | [Audit Log Query](09-audit-log-query.md) |
 | 10 | Runtime operation definitions | [Operation Definitions](10-operation-definitions.md) |
 
-## Document Structure
-
-Every process document contains these sections:
-
-1. Scope
-2. Preconditions
-3. Request
-4. Authentication and authorization
-5. Validation
-6. Processing
-7. Response
-8. State changes
-9. Errors
-10. Logging and audit
-11. Security boundaries
-12. Verification
-
 Shared architecture, operation, error, logging, dependency, and database rules
 remain authoritative in the repository root documents. Runtime operation names,
 permission classes, and common examples are defined in

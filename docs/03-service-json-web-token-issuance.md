@@ -374,7 +374,7 @@ flowchart LR
     PayloadBuilder --> KeyGenerator
     KeyGenerator --> Encryptor
     Encryptor --> SessionWriter
-    SessionWriter -->|token, token_key, history| SQLCipher
+    SessionWriter -->|token, token_key, iv, history| SQLCipher
     SessionWriter -->|active session| SessionCache
     SessionWriter --> AuditWriter
     AuditWriter --> Syslog
@@ -420,7 +420,7 @@ sequenceDiagram
     J->>J: Load registered encryption profile
     J->>J: Generate profile-sized CEK, 96-bit IV, and UUID kid
     J->>J: Encrypt with registered dir plus AES-GCM profile
-    J->>S: Commit token, token_key, issuance history, and active state
+    J->>S: Commit token, token_key, iv, issuance history, and active state
     J->>A: Insert active session and token_id MAP entry
     J->>O: Write JWT_ISSUED operational event
 
@@ -477,6 +477,7 @@ The persisted issuance record contains at least these required fields:
 | `token_id` | Yes | UUID returned to the client and mapped one-to-one to the JWT |
 | `token` | Yes | Complete encrypted token returned by issuance |
 | `token_key` | Yes | Recoverable token-specific content-encryption key stored as secret binary data |
+| `iv` | Yes | 96-bit initialization vector used for this token version, stored as 12 binary bytes |
 | `issued_at` | Yes | UTC time at which this token was issued |
 
 `token_id` and the JWT payload's `jti` contain the same UUID. This avoids two
@@ -491,6 +492,8 @@ and manage the token:
 - The token-specific content-encryption key as secret key material that
   Autobricks JWT can recover after opening SQLCipher through its HSM-managed
   Database-key path.
+- The 96-bit IV decoded from the JWE Initialization Vector component and stored
+  as 12 binary bytes for exact validation of the token version.
 - The registered service, WRITE `client_id`, and subject type bindings.
 - Issue time, absolute expiration, current session state, and revocation time
   when applicable.
@@ -539,6 +542,7 @@ A conceptual issuance-history record therefore includes:
   "kid": "<unique-token-key-id>",
   "token": "<base64url-jwe-compact-token>",
   "token_key": "<secret-binary-value>",
+  "iv": "<12-byte-binary-value>",
   "issued_at": "2026-01-01T00:00:00Z",
   "expires_at": "2026-01-01T01:00:00Z",
   "status": "ACTIVE"
@@ -547,7 +551,9 @@ A conceptual issuance-history record therefore includes:
 
 The JSON above documents logical fields only. `token_key` is a protected
 SQLCipher secret column and is never serialized into an API response, syslog,
-TrueLog event, diagnostic dump, or receipt.
+TrueLog event, diagnostic dump, or receipt. `iv` is not a secret, but it remains
+internal token-version metadata and is not returned as a separate response
+field or written to logs.
 
 Issuance-history creation and initial session-state creation are one atomic
 Database transaction. Autobricks JWT does not return a token when that
@@ -589,9 +595,10 @@ and the complete encrypted `token`. Autobricks JWT validates them as follows:
 8. Require the key record to specify the registered profile, `dir`, the matching
    AES-GCM algorithm, its required 128-bit, 192-bit, or 256-bit key size, the
    same service and token binding, and an active key state.
-9. Require a 96-bit IV and 128-bit authentication tag. Authenticate the exact
-   encoded protected-header component as JWE Additional Authenticated Data and
-   verify the AES-GCM tag before making plaintext available to any parser or
+9. Require a 96-bit IV, require its decoded 12 bytes to equal the IV stored with
+   the token version, and require a 128-bit authentication tag. Authenticate the
+   exact encoded protected-header component as JWE Additional Authenticated Data
+   and verify the AES-GCM tag before making plaintext available to any parser or
    operation.
 10. Decode the authenticated plaintext as one UTF-8 JSON object with unique
     member names and the required claims defined by this profile.
@@ -671,7 +678,7 @@ and session checks.
 Successful issuance creates:
 
 - One SQLCipher request-history record linked by `request_id`.
-- One durable SQLCipher token, key, issuance-history, and session record.
+- One durable SQLCipher token, key, IV, issuance-history, and session record.
 - One active Cache session and its Session MAP entry.
 - One `JWT_ISSUED` syslog event.
 - When TrueLog is configured, one `JWT_ISSUED` TrueLog event and its validated
@@ -748,7 +755,7 @@ classified failure writes its root `error_code` and `error_name` to syslog.
   to an authenticated root administrator.
 - Every token uses a newly generated content-encryption key; token keys are not
   shared between issued tokens.
-- SQLCipher stores the encrypted token, recoverable token key, and issuance
+- SQLCipher stores the encrypted token, recoverable token key, IV, and issuance
   history before the token is returned.
 - The response contains only the lookup UUID `token_id` and opaque encrypted
   token.
@@ -800,8 +807,8 @@ socket.
 2. Load the SQLCipher request record by `request_id`.
 3. Require that the request record and token record contain the same
    `token_id`, `client_id`, and `service_id` relationship.
-4. Load the stored encrypted token and its token-specific `token_key` from
-   SQLCipher; the administrator does not supply either value.
+4. Load the stored encrypted token, token-specific `token_key`, and IV from
+   SQLCipher; the administrator does not supply these values.
 5. Validate the stored token digest, `kid`, authenticated JWE structure,
    `token_id`/`jti` equality, service binding, and issuance record.
 6. Decrypt the complete payload only inside `ab-jwtd` and return it through the

@@ -12,12 +12,12 @@ Cryptographic protection remains dependent on the protection of its keys. NIST k
 
 Autobricks JWT removes JWT encryption and decryption keys from Web Services and Autobricks Policy.
 
-- Web Services hold an Issuance APIKEY and a Query APIKEY, not JWT cryptographic keys.
-- Autobricks Policy holds a Query APIKEY, not JWT cryptographic keys.
+- Web Services hold separately registered WRITE and READ APIKEYs, not JWT cryptographic keys.
+- Autobricks Policy holds a READ APIKEY, not JWT cryptographic keys.
 - Token encryption and complete payload decryption occur only inside Autobricks JWT.
 - Web Services and Autobricks Policy cannot request or receive a complete decrypted payload.
-- A Query APIKEY returns only fields authorized for the registered service.
-- Issuance and Query APIKEYs have separate permissions, which limits the operations available after one credential is compromised.
+- A READ APIKEY returns only fields authorized for the registered service.
+- WRITE and READ APIKEYs have separate permissions, which limits the operations available after one credential is compromised.
 - TLS and mutual TLS protect supported network service connections; Unix domain sockets provide a local service boundary.
 - JWT issuance, invalid-session requests, and privileged local token inspection
   create TrueLog evidence. None of these records contains keys, tokens,
@@ -38,10 +38,10 @@ SQLCipher does not permanently store its own database key. The integrating servi
 | Compromise | Direct key management in a Web Service | Autobricks JWT boundary |
 | --- | --- | --- |
 | Web Service process or host | JWT keys and complete token payloads may become available; the attacker may decrypt or create tokens directly. | JWT keys and complete decrypted payloads remain outside the Web Service. Stolen APIKEYs still permit operations within their assigned permissions. |
-| Autobricks Policy process or host | A shared JWT key can expose every token available to the Policy service. | The Policy service can request only authorized fields with its Query APIKEY and cannot obtain the complete payload or JWT keys. |
+| Autobricks Policy process or host | A shared JWT key can expose every token available to the Policy service. | The Policy service can request only authorized fields with its READ APIKEY and cannot obtain the complete payload or JWT keys. |
 | Source repository, image, or deployment artifact | Embedded keys can expose every environment that reuses them. | JWT keys are not distributed with Web Service or Policy artifacts. |
 | Database file theft | Plaintext key records or an unencrypted database can expose stored key material. | SQLCipher protects JWT key data at rest; opening the database still requires the HSM-managed SQLCipher key. |
-| One APIKEY | A shared unrestricted credential can expose issuance and lookup together. | Issuance and Query permissions are separated. Compromise remains effective within the stolen APIKEY's scope. |
+| One APIKEY | A shared unrestricted credential can expose state-changing and lookup operations together. | WRITE and READ permissions use separate registrations and APIKEYs. Compromise remains effective within the stolen APIKEY's scope. |
 | JWT Service process or root account | Not applicable when the Web Service owns the keys. | This is a high-impact compromise. A privileged attacker may inspect runtime plaintext, invoke authorized cryptographic operations, or obtain key material available to the service. |
 
 The architecture reduces the number of systems that can access JWT keys, removes complete-payload access from Web Services and Autobricks Policy, and limits credential permissions. It does not make compromise impossible.
@@ -59,8 +59,8 @@ Autobricks JWT can create a token from records returned by a configured user dat
 
 ## Residual Risks
 
-- A compromised Web Service can misuse its Issuance APIKEY to issue tokens within that registered service's permission.
-- A compromised Web Service or Policy service can misuse its Query APIKEY to retrieve fields authorized for that registered service.
+- A compromised Web Service can misuse its WRITE APIKEY to create, modify, or revoke tokens within that registered service's permission.
+- A compromised Web Service or Policy service can misuse its READ APIKEY to retrieve fields authorized for that registered service.
 - A compromised source database can provide false records that result in cryptographically valid but incorrectly issued tokens.
 - Information already supplied by or returned to a compromised client is not protected from that client.
 - A compromised JWT Service can access complete payloads while processing requests.

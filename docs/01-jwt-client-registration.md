@@ -42,18 +42,18 @@ and increase the impact of a compromised client or credential.
 
 READ integration can exist across many application components because session
 checks and authorized-field queries are common operations. If a READ client,
-Query APIKEY, or READ code path is compromised, the attacker may attempt every
+READ APIKEY, or READ code path is compromised, the attacker may attempt every
 operation exposed to that query identity. The authorization boundary must still
 prevent that attacker from creating an arbitrary subject session, replacing an
 existing JWT, or revoking another session. For this reason, no READ identity or
-Query APIKEY is accepted by a JWT state-changing operation.
+READ APIKEY is accepted by a JWT state-changing operation.
 
 The client application, such as a Web Server, must keep WRITE functionality in
 a separately controlled security area with its own client registration,
 credential, source restrictions, service binding, and APIKEY. Only that client
 area should hold and use the WRITE identity required for JWT creation,
 modification, or revocation. The more widely deployed READ area must receive
-only its separate READ identity and Query APIKEY.
+only its separate READ identity and READ APIKEY.
 
 Autobricks JWT does not implement or control the Web Server's internal security
 areas. It provides separate READ and WRITE registrations and rejects attempts
@@ -66,13 +66,13 @@ The separation provides the following security properties:
 
 - A READ client can be deployed broadly without receiving any session-changing
   permission.
-- A compromised READ client or Query APIKEY cannot create arbitrary JWT
+- A compromised READ client or READ APIKEY cannot create arbitrary JWT
   sessions.
 - A client owner can isolate the WRITE client in the component responsible for
   JWT creation, modification, and revocation.
-- Compromise of a Query APIKEY does not grant JWT creation, modification, or
+- Compromise of a READ APIKEY does not grant JWT creation, modification, or
   revocation.
-- Compromise of an Issuance APIKEY does not automatically grant field-query or
+- Compromise of a WRITE APIKEY does not automatically grant field-query or
   session-inspection permission.
 - READ and WRITE clients can use separate certificates, source restrictions,
   process identities, and deployment boundaries.
@@ -98,17 +98,17 @@ operations.
 | Modify | Apply an authorized change to the JWT session and return the resulting encrypted JWT when the operation changes token content. |
 | Revoke | Invalidate the active session so the encrypted JWT can no longer be used. |
 
-A Web Server requests JWT issuance with its bound WRITE `client_id`, Issuance
+A Web Server requests JWT issuance with its bound WRITE `client_id`, WRITE
 APIKEY, subject identifier, and configured source input. Autobricks JWT verifies
 that the client is active, has WRITE permission, and is bound to the same
-service as the Issuance APIKEY. It then constructs, signs, and encrypts the JWT,
+service as the WRITE APIKEY. It then constructs and encrypts the JWT,
 creates the active session, and returns only the encrypted JWT.
 
-The Issuance APIKEY does not create a JWT and does not grant WRITE permission by
+The WRITE APIKEY does not create a JWT and does not grant WRITE permission by
 itself. It authenticates the service making the issuance request. The WRITE
 permission comes from the active WRITE client registration identified by
 `client_id`. `ab-jwtd` creates the JWT only after the WRITE client binding, the
-service registration, the Issuance APIKEY, and the subject authorization all
+service registration, the WRITE APIKEY, and the subject authorization all
 match.
 
 The following cannot create, modify, or revoke a JWT:
@@ -116,11 +116,11 @@ The following cannot create, modify, or revoke a JWT:
 - A READ `client_id`
 - An inactive or deleted WRITE `client_id`
 - A WRITE `client_id` that is not bound to the requesting service
-- A WRITE `client_id` combined with another service's Issuance APIKEY
+- A WRITE `client_id` combined with another service's WRITE APIKEY
 
 The `client_id` identifies the registered permission but is not itself a secret.
 Knowing a WRITE `client_id` without the matching registered identity and
-Issuance APIKEY does not authorize a WRITE operation.
+WRITE APIKEY does not authorize a WRITE operation.
 
 The WRITE operation class is also distinct from Database mutation. It does not
 grant general INSERT, UPDATE, or DELETE permission on an external subject
@@ -132,7 +132,7 @@ by the registered service source configuration.
 READ is the permission to inspect an existing JWT session and cannot change its
 state. Client registration
 creates a separate `client_id` with `operation_class: READ`. A READ request
-requires that active READ `client_id` and the Query APIKEY of the service bound
+requires that active READ `client_id` and the READ APIKEY of the service bound
 to it. A WRITE `client_id` cannot replace the required READ `client_id`.
 
 READ provides two functions:
@@ -162,21 +162,21 @@ sequenceDiagram
     participant S as Session Database and Cache
     participant R as READ Consumer
 
-    W->>J: Request JWT creation (WRITE client_id, Issuance APIKEY, subject input)
+    W->>J: Request JWT creation (WRITE client_id, WRITE APIKEY, subject input)
     J->>J: Verify active WRITE permission and service binding
-    J->>J: Build, sign, and encrypt JWT
+    J->>J: Build and encrypt JWT
     J->>S: Create active session
     J-->>W: Encrypted JWT
 
     opt Modify or revoke the JWT session
-        W->>J: WRITE request (WRITE client_id, Issuance APIKEY, JWT)
+        W->>J: WRITE request (WRITE client_id, WRITE APIKEY, JWT)
         J->>J: Verify active WRITE permission and service binding
         J->>S: Modify or revoke session
         J-->>W: Updated encrypted JWT or revocation result
     end
 
     W->>R: Provide encrypted JWT
-    R->>J: Check or query (READ client_id, Query APIKEY, encrypted JWT)
+    R->>J: Check or query (READ client_id, READ APIKEY, encrypted JWT)
     J->>J: Verify active READ permission and service binding
     J->>S: Load active session
     S-->>J: Session state
@@ -206,8 +206,8 @@ The required authorization intersections are:
 
 | Requested operation | Permission source | Service-request authentication |
 | --- | --- | --- |
-| Create, modify, or revoke JWT | Active WRITE `client_id` bound to the service | Issuance APIKEY for the same service |
-| Check session or query fields | Active READ `client_id` bound to the service | Query APIKEY for the same service |
+| Create, modify, or revoke JWT | Active WRITE `client_id` bound to the service | WRITE APIKEY for the same service |
+| Check session or query fields | Active READ `client_id` bound to the service | READ APIKEY for the same service |
 
 ### Authorization Order
 
@@ -513,5 +513,5 @@ operating server's syslog with the assigned error code and redacted context.
 APIKEYs, private keys, certificate contents, and database credentials are never
 logged.
 
-JWT client registration is not one of the two TrueLog audit events defined by
+JWT client registration does not create a TrueLog audit event under
 the JWT Service. It does not write a TrueLog record or create a TrueLog receipt.

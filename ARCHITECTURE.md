@@ -1,7 +1,5 @@
 # Autobricks JWT Architecture
 
-Design status: initial architecture.
-
 ## Purpose
 
 Autobricks JWT separates JWT cryptographic keys and complete payload processing from registered client services. It issues encrypted session tokens and returns only authorized fields from an active token. A Web Service can be an issuance and query client. Autobricks Policy is one optional query client and is not a required component.
@@ -19,21 +17,21 @@ flowchart LR
     HSM[HSM]
     Log[Autobricks TrueLog]
 
-    Issuer -->|Issuance APIKEY\nissue JWT| JWT
-    Client -->|Query APIKEY\ncheck session or query fields| JWT
+    Issuer -->|WRITE APIKEY\ncreate, update, or revoke JWT| JWT
+    Client -->|READ APIKEY\ncheck session or query fields| JWT
     PKI -->|server and client certificates| JWT
     JWT -->|session and source Cache operations| Cache
     JWT -->|direct DB connections| DB
     Cache -->|independent Cache DB connections| DB
     JWT -->|SQLCipher DB key operations| HSM
-    JWT -->|issuance or invalid-session event| Log
+    JWT -->|issuance, invalid-session, or privileged-inspection event| Log
 ```
 
 ## Functional Design
 
 ### 1. Service Registration
 
-A client service is registered before it can issue a JWT or query a JWT session. Registration defines the service identity, allowed operations, allowed subject types, and field-query authorization.
+A client service is registered before it can issue a JWT or query a JWT session. Each registration binds one `client_id`, one operation class, and one APIKEY. A service requiring WRITE and READ access creates separate registrations. Registration defines the service identity, subject type, operation-specific configuration, and field-query authorization.
 
 Autobricks PKI issues the JWT Service server certificate and a client certificate for the registered service. The client certificate is delivered to that service during registration. Autobricks JWT stores the issued client certificate fingerprint in the SQLCipher `clients` table. When the service connects, Autobricks JWT validates the presented certificate and matches its fingerprint to the active client record. Only a registered and currently valid certificate identity can reach JWT issuance or query operations.
 
@@ -57,22 +55,27 @@ Client certificate usage is encoded in an exact URI SAN value:
 
 The URI SAN is a signed certificate claim, but it does not authorize access by itself. The certificate fingerprint must be actively registered, the `clients` record must contain the same operation class, and the request must use the corresponding APIKEY. A certificate issued by the PKI but not registered in `clients` remains unauthorized.
 
-Registration produces two credentials with separate permissions:
+Each registration produces one APIKEY with the permission of its registered
+client:
 
 | Credential | Permission | Consumer |
 | --- | --- | --- |
-| Issuance APIKEY | Issue JWT sessions for authorized subject types | Registered issuance client, such as a Web Service |
-| Query APIKEY | Check an active session and query authorized JWT fields | Registered query client; Autobricks Policy is one example |
+| WRITE APIKEY | Create, modify, and revoke JWT sessions for the registered subject type | Registered WRITE client, such as a Web Service |
+| READ APIKEY | Check an active session and query authorized JWT fields | Registered READ client; Autobricks Policy is one example |
 
-An Issuance APIKEY cannot query fields. A Query APIKEY cannot issue a JWT. Both APIKEYs are bound to the registered service.
+One registration never combines both permissions. A WRITE APIKEY cannot query
+fields, and a READ APIKEY cannot create, modify, or revoke a JWT. Every APIKEY
+is bound to its own `service_id` and `client_id` registration.
 
 Logical registration result:
 
 ```json
 {
   "service_id": "example-service",
-  "issuance_apikey": "<secret>",
-  "query_apikey": "<secret>"
+  "client_id": "<client-uuid>",
+  "operation_class": "WRITE",
+  "apikey": "<secret>",
+  "jwt_encryption_profile": "JWE_DIR_A256GCM"
 }
 ```
 
@@ -88,31 +91,30 @@ Every JWT session belongs to one subject. Autobricks JWT supports these subject 
 | `DEVICE` | A device identity |
 | `WORKLOAD` | An application, process, service, or workload identity |
 
-The issuance request identifies the registered service, subject type, subject identifier, and configured source. Source data is supplied as client JSON, loaded through a configured direct database query, or created from service-defined data.
+The WRITE registration already identifies the service, subject type, and source. The issuance request supplies the registered client, APIKEY, request identifier, and either registered Database conditions or a validated CLIENT_JSON object.
 
 Logical issuance input:
 
 ```json
 {
-  "subject": {
-    "type": "USER",
-    "id": "user-1234"
-  },
-  "source": {
-    "type": "DATABASE",
-    "id": "user_by_id"
-  }
+  "operation": "JWT_CREATE",
+  "request_id": "c2de26c8-5f40-4739-9298-1583ff40d338",
+  "client_id": "53f6bd4c-fe3d-494b-ae27-4ba66fdfb87a",
+  "apikey": "<write-apikey>",
+  "conditions": [
+    {"field": "user_id", "value": "user-1234"}
+  ]
 }
 ```
 
 Issuance processing:
 
-1. Authenticates the registered service with the Issuance APIKEY.
+1. Authenticates the registered WRITE service with its APIKEY.
 2. Verifies that the service can issue a JWT for the requested subject type.
 3. Resolves the configured source data.
 4. Constructs the complete JWT payload inside Autobricks JWT.
 5. Generates a new content-encryption key that is used only for this token and encrypts the complete payload.
-6. Stores the encrypted token, recoverable token-specific key, and issuance/session history in SQLCipher.
+6. Stores the encrypted token, recoverable token-specific key, IV, and issuance/session history in SQLCipher.
 7. Inserts the active session into Autobricks Cache and its internal Session MAP.
 8. Writes the successful issuance event to syslog and, when configured, Autobricks TrueLog.
 9. Returns the encrypted JWT and its one-to-one UUID `token_id`.
@@ -162,11 +164,11 @@ The payload shown above is a logical internal structure, not a plaintext service
 
 ### 4. JWT Expiration Status Query
 
-The expiration-status operation accepts `token_id`, the complete encrypted JWT, and a Query APIKEY. It does not return payload fields.
+The expiration-status operation accepts `token_id`, the complete encrypted JWT, and the APIKEY from a READ registration. It does not return payload fields.
 
 Processing:
 
-1. Authenticates the registered service with the Query APIKEY.
+1. Authenticates the registered READ service with its APIKEY.
 2. Looks up the active session in Autobricks Cache.
 3. Validates token integrity, audience, absolute `exp`, and session state inside Autobricks JWT.
 4. Returns an active status only when the token and Cache session are both active.
@@ -193,20 +195,21 @@ The invalid response never distinguishes an expired session from a session that 
 
 ### 5. JWT Field Query
 
-The field-query operation accepts `token_id`, the complete encrypted JWT, a Query APIKEY, and an explicit field list.
+The field-query operation accepts `token_id`, the complete encrypted JWT, the APIKEY from a READ registration, and an explicit field list.
 
 Logical request:
 
 ```json
 {
-  "jwt": "<encrypted-jwt>",
+  "token_id": "73475423-3470-4da3-b702-0d234b3632cd",
+  "token": "<base64url-jwe-compact-token>",
   "fields": ["department", "role"]
 }
 ```
 
 Processing:
 
-1. Authenticates the registered service with the Query APIKEY.
+1. Authenticates the registered READ service with its APIKEY.
 2. Confirms that the session is active.
 3. Validates and decrypts the complete JWT only inside Autobricks JWT.
 4. Authorizes each requested field for the registered service.
@@ -278,7 +281,7 @@ Expired or nonexistent session request:
 
 Audit events do not contain an APIKEY, JWT, `jti`, complete payload, decrypted field value, database credential, HSM credential, or cryptographic key. The invalid-session event always carries error code `8060`. Successful expiration-status queries, successful field queries, client-side decisions, Retention extension, and Cache activity do not create JWT TrueLog events.
 
-After TrueLog durably appends an event, it returns an append receipt containing `hostname`, `service`, and the before/after file name, file size, and checksum. Autobricks JWT stores that complete receipt in the corresponding local database record for the issuance or invalid-session event. The receipt is database evidence and is not added to the TrueLog event payload.
+After TrueLog durably appends an event, it returns an append receipt containing `hostname`, `service`, and the before/after file name, file size, and checksum. Autobricks JWT stores that complete receipt in the corresponding local database record for the issuance, invalid-session, or privileged-inspection event. The receipt is database evidence and is not added to the TrueLog event payload.
 
 Logical receipt record:
 
@@ -306,13 +309,13 @@ The stored receipt provides the WORM file location and checksum-chain boundary n
 
 | Component | Responsibility | Excluded responsibility |
 | --- | --- | --- |
-| Autobricks JWT | Service registration, SQLCipher client records, certificate-chain and validity verification, AIA-based OCSP validation, registered fingerprint and URI SAN usage verification, APIKEY authorization, token construction, encryption, validation, internal decryption, field authorization, session handling, two TrueLog events, and receipt persistence | Correctness of compromised external source records |
+| Autobricks JWT | Service registration, SQLCipher client records, certificate-chain and validity verification, AIA-based OCSP validation, registered fingerprint and URI SAN usage verification, APIKEY authorization, token construction, encryption, validation, internal decryption, field authorization, session handling, defined TrueLog events, and receipt persistence | Correctness of compromised external source records |
 | Registered issuance client | JWT issuance requests and token transport; a Web Service is one example | JWT keys and complete decrypted payload access |
 | Registered query client | Active-session checks and authorized field queries; Autobricks Policy is one example | JWT keys, direct token decryption, and complete payload access |
 | Autobricks PKI | Server and client certificate issuance and trust material for TLS and mutual TLS identity | JWT issuance, payload processing, service authorization, and session state |
 | Autobricks Cache | MAP-based lookup, mutation, persistence queue, and Retention according to Cache Definitions | JWT cryptography and field authorization |
 | Database owner | Source-record integrity, access control, change authorization, backup security, and compromise detection | JWT cryptographic processing |
-| Autobricks TrueLog | Durable storage for the two JWT event categories | Token payload inspection and client-side decisions |
+| Autobricks TrueLog | Durable evidence for issuance, invalid-session requests, and privileged local token inspection | Token payload storage and client-side decisions |
 | HSM | Protection and use of the SQLCipher database key | Protection from every operation performed by an authorized compromised host |
 
 ## Internal Components
@@ -331,8 +334,8 @@ Request Authentication
 ├── AIA OCSP status verification
 ├── SQLCipher client fingerprint verification
 ├── Certificate URI SAN operation verification
-├── Issuance APIKEY authorization
-└── Query APIKEY authorization
+├── WRITE APIKEY authorization
+└── READ APIKEY authorization
         │
         ├──► Issuance Service
         │     ├── Source Resolver
@@ -400,14 +403,14 @@ timeout: 3600
 
 ### Service Registry
 
-Every client service is registered before using JWT operations. Registration records the Autobricks PKI-issued client certificate fingerprint and its URI SAN operation class in the SQLCipher `clients` table and delivers the client certificate to the registered service. The client record must remain active for the certificate to authenticate. Registration also produces two credentials:
+Every client service is registered before using JWT operations. Registration records the Autobricks PKI-issued client certificate fingerprint and its URI SAN operation class in the SQLCipher `clients` table and delivers the client certificate to the registered service. The client record must remain active for the certificate to authenticate. Each registration produces one APIKEY:
 
 | Credential | Allowed operation | Consumer |
 | --- | --- | --- |
-| Issuance APIKEY | Create an encrypted JWT session | Registered issuance client, such as a Web Service |
-| Query APIKEY | Query authorized fields from an active JWT session | Registered query client; Autobricks Policy is one example |
+| WRITE APIKEY | Create, modify, and revoke an encrypted JWT session | Registered WRITE client, such as a Web Service |
+| READ APIKEY | Check an active session and query authorized fields | Registered READ client; Autobricks Policy is one example |
 
-An APIKEY is bound to its registered service and operation class. Possession of one APIKEY does not grant the permissions of the other. Authorization is the intersection of the certificate URI SAN operation, the active `clients` registration operation, and the APIKEY operation. A mismatch is rejected.
+An APIKEY is bound to its registered service, `client_id`, and operation class. A service requiring both operation classes uses separate registrations and credentials. Authorization is the intersection of the certificate URI SAN operation, the active `clients` registration operation, and the APIKEY operation. A mismatch is rejected.
 
 ### Source Resolver
 
@@ -415,7 +418,6 @@ The Source Resolver supplies token input from one of the configured sources:
 
 - Client-supplied JSON
 - A direct database query
-- Service-defined data
 
 A caller necessarily knows values that it supplies itself. It does not gain access to additional database-derived fields or to the complete payload constructed inside Autobricks JWT.
 
@@ -437,7 +439,7 @@ The cryptographic component returns an encrypted token during issuance. During f
 
 ### Field Authorization
 
-Field authorization evaluates the registered service, Query APIKEY, token context, and requested field names. The response contains only authorized requested fields. The interface does not provide a complete-payload operation.
+Field authorization evaluates the registered READ service, APIKEY, token context, and requested field names. The response contains only authorized requested fields. The interface does not provide a complete-payload operation.
 
 ### Direct Database Layer
 
@@ -451,7 +453,7 @@ The SQLCipher `operations` table contains the fixed runtime definitions `JWT_CRE
 
 `JWT_UPDATE` is an upsert of the encrypted JWT's dynamic `claims` JSON object, not a requirement to update a Database row. It can replace an existing claim or add an application field that was absent from the original Database result and does not exist as a Database column. Reserved JWT metadata remains immutable, and JSON structure and payload limits are validated at runtime. Successful update preserves `token_id` and `jti`, generates a new token-specific encryption key and replacement encrypted token, invalidates the previous token version, records the version in SQLCipher, and atomically replaces the active Cache digest and key reference.
 
-Every issued token has a persistent record containing at least `client_id`, `service_id`, `request_id`, the UUID `token_id`, the encrypted `token`, its recoverable token-specific `token_key`, and `issued_at`. `token_id` is returned with the token, maps one-to-one to it, and is stored as the same UUID as the JWT `jti`. The same record also contains `kid`, expiration, session state, token digest, and audit-receipt state required for later validation and operation. The plaintext payload is not stored as issuance history. Each token uses an independently generated content-encryption key; a content-encryption key is never reused for another token. The key remains recoverable only inside `ab-jwtd` after SQLCipher is opened through the HSM-managed Database-key path so the token can later be authenticated and decrypted.
+Every issued token has a persistent record containing at least `client_id`, `service_id`, `request_id`, the UUID `token_id`, the encrypted `token`, its recoverable token-specific `token_key`, the 96-bit `iv` used for that token version, and `issued_at`. `iv` is stored as 12 binary bytes and must match the decoded JWE Initialization Vector component during validation. `token_id` is returned with the token, maps one-to-one to it, and is stored as the same UUID as the JWT `jti`. The same record also contains `kid`, expiration, session state, token digest, and audit-receipt state required for later validation and operation. The plaintext payload is not stored as issuance history. Each token uses an independently generated content-encryption key; a content-encryption key is never reused for another token. The key remains recoverable only inside `ab-jwtd` after SQLCipher is opened through the HSM-managed Database-key path so the token can later be authenticated and decrypted.
 
 The SQLCipher `clients` table is the authoritative certificate registration store. It associates a registered service with its client certificate SHA-256 fingerprint, URI SAN operation class, and active registration state. A valid certificate that has no active matching record is not authorized to use JWT operations.
 
@@ -483,7 +485,7 @@ An expired session and a nonexistent session use the same service error and True
 
 TrueLog records exclude APIKEYs, JWT values, complete payloads, decrypted field values, and cryptographic secrets.
 
-After a successful append, the TrueLog Writer validates the returned hostname, service, before/after file names, byte sizes, and checksums and updates the corresponding JWT issuance or invalid-session database record with those receipt fields. These fields are local database evidence for later WORM metadata and checksum-chain verification; they are not written into the TrueLog event and do not create an additional TrueLog event category.
+After a successful append, the TrueLog Writer validates the returned hostname, service, before/after file names, byte sizes, and checksums and updates the corresponding JWT issuance, invalid-session, or privileged-inspection database record with those receipt fields. These fields are local database evidence for later WORM metadata and checksum-chain verification; they are not written into the TrueLog event and do not create an additional TrueLog event category.
 
 ## Operational and Audit Log Separation
 
@@ -521,19 +523,19 @@ sequenceDiagram
     participant C as Autobricks Cache
     participant T as Autobricks TrueLog
 
-    W->>J: Issue request + Issuance APIKEY
-    J->>J: Authenticate registered service and APIKEY
+    W->>J: JWT_CREATE + client_id + APIKEY + request_id + source input
+    J->>J: Authenticate WRITE registration and APIKEY
     alt Database source is configured
         J->>D: Execute configured source query
         D-->>J: Source records
-    else JSON or service source is configured
-        J->>J: Resolve configured source data
+    else CLIENT_JSON source is configured
+        J->>J: Validate registered JSON source data
     end
-    J->>J: Generate unique token key and encrypt payload
-    J->>S: Store encrypted token, protected key, and issuance history
+    J->>J: Generate profile key and IV and encrypt payload
+    J->>S: Store encrypted token, protected key, IV, and issuance history
     J->>C: Insert active session and Session MAP entry
     J->>T: Write successful issuance event
-    J-->>W: Encrypted JWT
+    J-->>W: token_id and encrypted JWT
 ```
 
 The issuance response never contains the complete plaintext payload or JWT cryptographic keys.
@@ -547,8 +549,8 @@ sequenceDiagram
     participant C as Autobricks Cache
     participant T as Autobricks TrueLog
 
-    X->>J: JWT + requested fields + Query APIKEY
-    J->>J: Authenticate registered service and APIKEY
+    X->>J: token_id + JWT + requested fields + client_id + APIKEY
+    J->>J: Authenticate READ registration and APIKEY
     J->>C: Look up active session
     alt Session is missing or expired
         J->>T: Write common invalid-session event
@@ -585,12 +587,12 @@ The authoritative `8000` through `8100` error registry, response envelope, expos
 - Autobricks PKI issues the JWT Service server certificate and registered-service client certificates.
 - Service registration stores the client certificate fingerprint in the SQLCipher `clients` table.
 - Network access requires a valid certificate chain, validity interval, client-authentication purpose, `GOOD` status from the AIA OCSP URL, and an active matching client fingerprint before JWT issuance or query authorization.
-- Client certificate URI SAN `urn:autobricks:jwt:read` authorizes only query operations, and `urn:autobricks:jwt:write` authorizes only issuance operations.
+- Client certificate URI SAN `urn:autobricks:jwt:read` authorizes only query operations, and `urn:autobricks:jwt:write` authorizes only creation, modification, and revocation operations.
 - Effective permission is the intersection of the certificate URI SAN, active `clients` registration, and request APIKEY operation class.
 - TLS and mutual TLS connections support multiple framed requests so the established secure session can be reused.
 - Keep-alive uses the registered client's timeout or the configuration `timeout` default, renews its idle deadline after each valid processed request, and closes the idle connection to require reconnection.
 - Idle renewal cannot extend the connection beyond the configured maximum lifetime or the certificate's `notAfter` time. Keep-alive also remains subject to OCSP refresh and active client registration.
-- Issuance and Query use separate APIKEY permissions.
+- WRITE and READ use separate service registrations and APIKEY permissions.
 - Registered client services cannot obtain the complete decrypted payload.
 - Direct database support is independent of Autobricks Cache.
 - Autobricks Cache is consumed through its existing public behavior.

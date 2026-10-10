@@ -7,8 +7,8 @@ Autobricks JWT issues encrypted session tokens and provides authorized access to
 ```mermaid
 flowchart TB
     subgraph Clients[Registered Client Services]
-        Writer[Issuance Client<br/>write certificate and Issuance APIKEY]
-        Reader[Query Client<br/>read certificate and Query APIKEY]
+        Writer[WRITE Client<br/>write certificate and APIKEY]
+        Reader[READ Client<br/>read certificate and APIKEY]
     end
 
     subgraph Interfaces[Service Interfaces]
@@ -52,27 +52,30 @@ flowchart TB
     PKI[Autobricks PKI Client] -. certificates and OCSP trust .-> Identity
     Cache[Autobricks Cache<br/>required shared library] <--> Session
     Source[(Configured Token Source)] --> Issuance
-    SessionDB[(JWT Session Database)] <--> Session
-    KeyDB[(SQLCipher Key Store)] <--> Crypto
-    HSM[HSM] <--> KeyDB
+    SQLCipher[(SQLCipher History and Key Store)] <--> Session
+    SQLCipher <--> Crypto
+    HSM[HSM] <--> SQLCipher
     Issuance -->|issued event or service error| Syslog[Operating Server Syslog]
     Query -->|invalid session or service error| Syslog
     Issuance -->|issued event when configured| TrueLog[Autobricks TrueLog Client]
     Query -->|invalid session when configured| TrueLog
     TrueLog --> Receipt
-    Receipt --> SessionDB
+    Receipt --> SQLCipher
 ```
 
 Autobricks Cache is required. PKI and TrueLog integrations are conditional as defined in [DEPENDENCIES.md](DEPENDENCIES.md). Without the PKI client, only Unix domain socket and TCP are available. Without the TrueLog client, audit-event copies remain in syslog and no immutable audit receipt is stored.
 
 ## Service Registration
 
-A service must be registered before it can use Autobricks JWT. Registration issues two APIKEYs with separate permissions.
+A service must be registered before it can use Autobricks JWT. Each service
+registration binds one `client_id`, one operation class, and one APIKEY.
+Services requiring both operation classes create separate WRITE and READ
+registrations.
 
-| APIKEY | Permission | Consumers |
+| Registration | APIKEY permission | Consumers |
 | --- | --- | --- |
-| Issuance APIKEY | Create encrypted JWT sessions | Web Service |
-| Query APIKEY | Query authorized fields from an active JWT session | Web Service, Autobricks Policy |
+| WRITE | Create, modify, and revoke encrypted JWT sessions | Web Service |
+| READ | Check active sessions and query authorized fields | Web Service, Autobricks Policy |
 
 An APIKEY is valid only for its assigned operation and registered service.
 
@@ -90,26 +93,26 @@ sequenceDiagram
     participant L as Syslog
     participant T as Autobricks TrueLog
 
-    W->>J: Issue request + write certificate + Issuance APIKEY
+    W->>J: JWT_CREATE + client_id + APIKEY + request_id + source input
     J->>J: Validate transport identity, certificate, OCSP, fingerprint, and write URI SAN
-    J->>J: Validate registered service and Issuance APIKEY
-    J->>S: Resolve configured JSON, database, or service source
+    J->>J: Validate WRITE registration and APIKEY
+    J->>S: Resolve registered CLIENT_JSON or DATABASE source
     S-->>J: Source values
     J->>J: Build and encrypt the complete payload internally
-    J->>C: Insert active session
-    C->>D: Persist through configured Cache write path
+    J->>D: Store token, key, IV, and issuance history in SQLCipher
+    J->>C: Insert active session and token_id MAP entry
     J->>L: JWT_ISSUED event copy
     opt TrueLog client is configured
         J->>T: JWT_ISSUED audit event
         T-->>J: Durable append receipt
         J->>D: Store receipt in the issuance record
     end
-    J-->>W: Encrypted JWT only
-    W-->>R: Supply encrypted JWT to an authorized consumer
+    J-->>W: token_id + encrypted JWT
+    W-->>R: Supply token_id + encrypted JWT to an authorized consumer
 
     opt Session-status query
-        R->>J: Encrypted JWT + read certificate + Query APIKEY
-        J->>J: Validate transport identity, read URI SAN, registration, and Query APIKEY
+        R->>J: token_id + encrypted JWT + client_id + APIKEY
+        J->>J: Validate transport identity, READ registration, and APIKEY
         J->>C: Look up active session
         alt Session is active
             J-->>R: ACTIVE
@@ -124,8 +127,8 @@ sequenceDiagram
         end
     end
 
-    R->>J: Encrypted JWT + requested fields + read certificate + Query APIKEY
-    J->>J: Validate transport identity, read URI SAN, registration, and Query APIKEY
+    R->>J: token_id + encrypted JWT + fields + client_id + APIKEY
+    J->>J: Validate transport identity, READ registration, and APIKEY
     J->>C: Look up active session
     alt Session is missing or expired
         J->>L: JWT_SESSION_INVALID with error code 8060
@@ -147,17 +150,17 @@ The sequence shows the Secure dependency profile. Read and write operations use 
 
 ## Token Issuance
 
-- Accepts token source data as client-supplied JSON, database records, or service-defined data.
+- Accepts token source data through the registered CLIENT_JSON or DATABASE source.
 - Creates the token payload inside Autobricks JWT.
 - Encrypts the payload before returning the JWT.
 - Prevents the requesting service from reading the complete token payload.
-- Authenticates issuance requests with the Issuance APIKEY.
+- Authenticates issuance requests with the APIKEY from the WRITE registration.
 - Persists JWT session records in the configured database.
 - Writes a successful issuance event to syslog and, when the Autobricks TrueLog client is configured, to Autobricks TrueLog.
 
 ## Field Query
 
-- Authenticates field-query requests with the Query APIKEY.
+- Authenticates field-query requests with the APIKEY from the READ registration.
 - Validates the registered service, token integrity, intended audience, expiration, and session state.
 - Decrypts the token only inside Autobricks JWT.
 - Authorizes every requested field for the calling service.
@@ -174,7 +177,8 @@ The sequence shows the Secure dependency profile. Read and write operations use 
 ## Cache and Database
 
 - Uses [Autobricks Cache](https://github.com/pregene/autobricks-cache) for MAP-based in-memory session lookup and configurable retention.
-- Applies Cache mutations before asynchronous database persistence through the Connection-owned WRITE Queue.
+- Uses the Connection-owned WRITE Queue for Cache Definitions configured with asynchronous persistence.
+- Commits JWT request history, issuance history, token keys, IVs, and audit receipts to SQLCipher independently of Cache persistence.
 - Provides configurable Cache Definitions for each deployment.
 - Supports independent Caches for optional source data such as users, accounts, and devices.
 - Keeps source-data Cache loading and retention separate from JWT session retention.
@@ -198,7 +202,7 @@ TLS and mutual TLS require an installed and configured Autobricks PKI client. Wi
 | [Autobricks PKI](https://github.com/pregene/autobricks-pki) | Certificates and trust material for TLS and mutual TLS service connections |
 | Autobricks Policy | JWT field queries and policy evaluation without access to the complete decrypted payload |
 | [Autobricks Cache](https://github.com/pregene/autobricks-cache) | In-memory lookup, mutation, database persistence, and retention |
-| [Autobricks TrueLog](https://github.com/pregene/autobricks-log) | Durable storage for JWT issuance and invalid-session events |
+| [Autobricks TrueLog](https://github.com/pregene/autobricks-log) | Durable evidence for JWT issuance, invalid-session requests, and privileged local token inspection |
 
 ## True Log Events
 
@@ -219,7 +223,7 @@ Without the Autobricks TrueLog client, these events are written only to syslog a
   privileged local root inspection path can display it.
 - Web Services and Autobricks Policy cannot obtain a complete decrypted payload.
 - Web Services and Autobricks Policy do not receive decryption keys.
-- Issuance and Query APIKEYs have separate permissions.
+- WRITE and READ APIKEYs have separate permissions.
 - Audit records do not contain APIKEYs, JWTs, complete payloads, decrypted field values, or cryptographic secrets.
 - Logs and error details do not expose protected token content.
 

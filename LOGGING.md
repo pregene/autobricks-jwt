@@ -93,7 +93,7 @@ Autobricks JWT does not write TrueLog events for:
 - Service registration
 - Certificate or APIKEY authentication failures
 - Rejected or internally failed JWT issuance
-- Internal maintenance operations
+- Other internal maintenance operations
 
 Changing this list requires an explicit architecture decision. Implementations must not introduce additional event categories implicitly.
 
@@ -195,7 +195,7 @@ After a successful append, TrueLog returns the durable storage receipt:
 }
 ```
 
-The receipt is not another TrueLog event. Autobricks JWT validates it and stores it in the corresponding local database record for the issuance or invalid-session event.
+The receipt is not another TrueLog event. Autobricks JWT validates it and stores it in the corresponding local database record for the issuance, invalid-session, or privileged-inspection event.
 
 Receipt validation requires:
 
