@@ -214,8 +214,11 @@ and field-query behavior are defined in
 ## Security Rules
 
 - `operation` selects processing behavior but never supplies authorization.
-- Query, update, and revoke requests require both `token_id` and the complete
-  encrypted `token`; `token_id` is only a lookup accelerator.
+- Update requests require both `token_id` and the complete encrypted `token`.
+- Query and revoke requests always require `token_id`. They also require the
+  complete encrypted `token` when the server installation enables
+  `require_token_for_query_and_revoke`; otherwise the server resolves and
+  validates the stored token. A submitted token is never ignored.
 - READ credentials cannot execute WRITE operations.
 - WRITE credentials cannot execute `JWT_QUERY`.
 - APIKEYs, tokens, token keys, and subject values are never stored in the

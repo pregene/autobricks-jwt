@@ -148,6 +148,13 @@ sequenceDiagram
 
 The sequence shows the Secure dependency profile. Read and write operations use separately issued client certificates. Reduced profiles apply the transport limitations in [DEPENDENCIES.md](DEPENDENCIES.md). Complete plaintext payloads and JWT cryptographic keys remain inside Autobricks JWT throughout both flows.
 
+The sequence also shows the secure default
+`require_token_for_query_and_revoke: true`. An installation may set it to
+`false` so query and revocation requests send `token_id` without retransmitting
+the complete JWE. In that mode, `ab-jwtd` loads and validates the stored token;
+all connection, client, APIKEY, service, session, and field permissions remain
+required. See [INSTALL.md](INSTALL.md).
+
 ## Token Issuance
 
 - Accepts token source data through the registered CLIENT_JSON or DATABASE source.
@@ -199,6 +206,7 @@ TLS and mutual TLS require an installed and configured Autobricks PKI client. Wi
 | Service | Responsibility |
 | --- | --- |
 | Autobricks JWT | Service registration, APIKEY authorization, encrypted JWT issuance, token validation, payload decryption, field authorization, and session handling |
+| Web Service | End-user authentication, application-session association, and authorization to query or revoke the selected opaque JWT session |
 | [Autobricks PKI](https://github.com/pregene/autobricks-pki) | Certificates and trust material for TLS and mutual TLS service connections |
 | Autobricks Policy | JWT field queries and policy evaluation without access to the complete decrypted payload |
 | [Autobricks Cache](https://github.com/pregene/autobricks-cache) | In-memory lookup, mutation, database persistence, and retention |
@@ -215,6 +223,117 @@ When the Autobricks TrueLog client is installed and configured, Autobricks JWT w
 Successful field queries, policy evaluation, session retention extension, and Cache activity do not create JWT TrueLog events.
 
 Without the Autobricks TrueLog client, these events are written only to syslog and no immutable audit evidence or append receipt is produced. For secure deployment requirements and installation order, see [DEPENDENCIES.md](DEPENDENCIES.md).
+
+## Recommended Dedicated Deployment
+
+Autobricks JWT should run as a dedicated service in a security domain separate
+from SSO servers, OAuth or OpenID Connect Authorization Servers, and ordinary
+Web Servers. Those systems use registered WRITE or READ operations instead of
+holding JWT cryptographic keys or directly processing the complete decrypted
+payload.
+
+For a Database-backed subject source, the recommended integration also keeps
+the login subject Database credential, SELECT logic, Cache, and permitted
+subject mutation path inside the Autobricks JWT service boundary. SSO, OAuth,
+and Web Server components request JWT creation, authorized-field lookup, or
+revocation through their narrowly scoped client registrations. They do not
+need direct login-subject queries or updates for those JWT session operations.
+
+This separation reduces the impact of a compromised application server:
+
+- The compromised server does not obtain the JWT encryption keys or complete
+  decrypted payload.
+- It does not automatically obtain the login subject Database credential or a
+  general-purpose subject query or mutation interface.
+- A stolen READ APIKEY remains limited to its registered fields, and a stolen
+  WRITE APIKEY remains limited to its registered service and WRITE operations.
+- Separately deployed SSO, OAuth, and application components can use different
+  credentials and minimum field allowlists so compromise of one component does
+  not automatically expose every login permission.
+
+Dedicated deployment raises the security level by adding independent trust
+boundaries and requiring additional compromise steps. Compromise of one Web
+Server provides only the credentials and permissions present in that server.
+Reaching JWT keys, complete payloads, or the subject Database additionally
+requires crossing the registered client boundary, transport and source CIDR
+controls, the Autobricks JWT service boundary, SQLCipher protection, and the
+HSM-managed Database-key path as applicable.
+
+Host separation, mTLS, source CIDR restrictions, least-privilege
+registrations, protected secret storage, monitoring, and compromise recovery
+increase the number and difficulty of the steps required to reach protected
+JWT and subject assets.
+
+### Recommended Server Separation
+
+```mermaid
+flowchart LR
+    Browser[Browser]
+
+    subgraph Public[Public Application Boundary]
+        Web[Web Server<br/>HTTP, Cookie, and Request Handling]
+    end
+
+    subgraph Issuance[Token Creation Security Boundary]
+        TokenServer[Token Creation Server<br/>Dedicated WRITE Identity and APIKEY]
+    end
+
+    subgraph Business[Business Application Security Boundary]
+        BusinessServer[Business Logic Web Server<br/>Dedicated READ Identity and APIKEY]
+    end
+
+    subgraph Identity[JWT Security Boundary]
+        JWT[Autobricks JWT<br/>Token Keys, Subject Access,<br/>Session and Field Authorization]
+    end
+
+    subgraph Evidence[Audit Evidence Boundary]
+        TrueLog[Autobricks TrueLog]
+    end
+
+    subgraph Trust[Certificate Trust Boundary]
+        PKI[Autobricks PKI]
+    end
+
+    Browser <--> Web
+    Web -->|login and token creation request| TokenServer
+    TokenServer -->|JWT_CREATE with WRITE credential| JWT
+    JWT -->|token_id and opaque encrypted JWT| TokenServer
+    TokenServer -->|opaque session result| Web
+    Web -->|application request and opaque session context| BusinessServer
+    BusinessServer -->|JWT_QUERY with READ credential| JWT
+    JWT -->|authorized fields only| BusinessServer
+    BusinessServer -->|business result| Web
+    JWT -->|issuance and invalid-session evidence| TrueLog
+    PKI -.->|server and client certificates<br/>and revocation status| JWT
+    PKI -.->|client identity material| TokenServer
+    PKI -.->|client identity material| BusinessServer
+```
+
+This layout gives each server only the credential required for its purpose:
+
+- The public Web Server handles browser traffic and opaque session transport
+  without receiving JWT keys or direct subject Database access.
+- The Token Creation Server holds a dedicated WRITE identity and APIKEY. It can
+  request creation, modification, or revocation but cannot query token fields.
+- The Business Logic Web Server holds a dedicated READ identity and APIKEY with
+  only the fields needed for its business function. It cannot create, modify,
+  or revoke a session.
+- Autobricks JWT owns token cryptography, subject access, session state, and
+  field authorization in a separate security boundary.
+- Autobricks TrueLog receives the defined immutable audit evidence without
+  receiving JWT values, keys, or decrypted fields.
+- Autobricks PKI provides the certificate identities and revocation status used
+  for protected service connections.
+
+This separation raises the security level because compromise of the public Web
+Server, Token Creation Server, or Business Logic Web Server exposes a different
+and limited permission set. Reaching another permission class or the internal
+JWT assets requires crossing an additional service identity and host boundary.
+
+`CLIENT_JSON` is an explicit alternative source mode in which the WRITE client
+supplies subject data. Deployments choosing that mode retain responsibility for
+the integrity of the supplied subject values and do not receive the same
+Database-access isolation as the recommended Database-backed integration.
 
 ## Security Boundaries
 

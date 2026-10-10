@@ -90,7 +90,7 @@ Autobricks JWT does not write TrueLog events for:
 - Field-authorization decisions
 - Cache lookup, mutation, persistence, or Retention extension
 - Client-side policy decisions
-- Service registration
+- Service or JWT client registration and deletion
 - Certificate or APIKEY authentication failures
 - Rejected or internally failed JWT issuance
 - Other internal maintenance operations

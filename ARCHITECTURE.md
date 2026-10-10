@@ -310,8 +310,9 @@ The stored receipt provides the WORM file location and checksum-chain boundary n
 | Component | Responsibility | Excluded responsibility |
 | --- | --- | --- |
 | Autobricks JWT | Service registration, SQLCipher client records, certificate-chain and validity verification, AIA-based OCSP validation, registered fingerprint and URI SAN usage verification, APIKEY authorization, token construction, encryption, validation, internal decryption, field authorization, session handling, defined TrueLog events, and receipt persistence | Correctness of compromised external source records |
+| Registered Web Service | Authentication of its end user, association of the opaque JWT or `token_id` with its own application session, and authorization of each application-level query or revocation request | JWT keys, direct token decryption, complete payload access, and delegation of end-user authentication to Autobricks JWT |
 | Registered issuance client | JWT issuance requests and token transport; a Web Service is one example | JWT keys and complete decrypted payload access |
-| Registered query client | Active-session checks and authorized field queries; Autobricks Policy is one example | JWT keys, direct token decryption, and complete payload access |
+| Registered query client | Active-session checks and authorized field queries; Autobricks Policy is one example | JWT keys, direct token decryption, complete payload access, and end-user authentication decisions |
 | Autobricks PKI | Server and client certificate issuance and trust material for TLS and mutual TLS identity | JWT issuance, payload processing, service authorization, and session state |
 | Autobricks Cache | MAP-based lookup, mutation, persistence queue, and Retention according to Cache Definitions | JWT cryptography and field authorization |
 | Database owner | Source-record integrity, access control, change authorization, backup security, and compromise detection | JWT cryptographic processing |
@@ -454,6 +455,14 @@ The SQLCipher `operations` table contains the fixed runtime definitions `JWT_CRE
 `JWT_UPDATE` is an upsert of the encrypted JWT's dynamic `claims` JSON object, not a requirement to update a Database row. It can replace an existing claim or add an application field that was absent from the original Database result and does not exist as a Database column. Reserved JWT metadata remains immutable, and JSON structure and payload limits are validated at runtime. Successful update preserves `token_id` and `jti`, generates a new token-specific encryption key and replacement encrypted token, invalidates the previous token version, records the version in SQLCipher, and atomically replaces the active Cache digest and key reference.
 
 Every issued token has a persistent record containing at least `client_id`, `service_id`, `request_id`, the UUID `token_id`, the encrypted `token`, its recoverable token-specific `token_key`, the 96-bit `iv` used for that token version, and `issued_at`. `iv` is stored as 12 binary bytes and must match the decoded JWE Initialization Vector component during validation. `token_id` is returned with the token, maps one-to-one to it, and is stored as the same UUID as the JWT `jti`. The same record also contains `kid`, expiration, session state, token digest, and audit-receipt state required for later validation and operation. The plaintext payload is not stored as issuance history. Each token uses an independently generated content-encryption key; a content-encryption key is never reused for another token. The key remains recoverable only inside `ab-jwtd` after SQLCipher is opened through the HSM-managed Database-key path so the token can later be authenticated and decrypted.
+
+The installation setting `require_token_for_query_and_revoke` controls whether
+`JWT_QUERY` and `JWT_REVOKE` must carry the complete encrypted token in addition
+to `token_id`. The secure default is `true`. When set to `false`, `ab-jwtd`
+loads the stored token selected by `token_id` and performs the same internal
+cryptographic, service-binding, session, and authorization validation. Any
+submitted token must match the stored token. Runtime requests cannot override
+this server setting.
 
 The SQLCipher `clients` table is the authoritative certificate registration store. It associates a registered service with its client certificate SHA-256 fingerprint, URI SAN operation class, and active registration state. A valid certificate that has no active matching record is not authorized to use JWT operations.
 

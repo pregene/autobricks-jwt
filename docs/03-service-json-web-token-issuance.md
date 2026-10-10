@@ -576,12 +576,16 @@ operator-configured MAP key.
 
 ## Later Token Validation
 
-Every later query, modification, or revocation request supplies both `token_id`
-and the complete encrypted `token`. Autobricks JWT validates them as follows:
+Every later operation supplies `token_id`. Modification also supplies the
+complete encrypted `token`. Query and revocation supply the token when the
+server installation enables `require_token_for_query_and_revoke`; otherwise
+the service can resolve the stored token from `token_id`. Autobricks JWT
+validates the selected token as follows:
 
 1. Validate `token_id` as a UUID and look it up in the active Session Cache MAP.
-2. Compare the digest of the supplied token with the digest bound to that
-   session record.
+2. When a token is supplied, compare its digest with the digest bound to that
+   session record. When query or revocation omits it under token-optional mode,
+   select the stored token bound to the session record.
 3. Require exactly five JWE Compact components and canonical unpadded Base64URL
    encoding for every nonempty component.
 4. Decode the protected header as a UTF-8 JSON object with unique member names,
@@ -612,7 +616,7 @@ and the complete encrypted `token`. Autobricks JWT validates them as follows:
 13. Match the `kid`, service binding, token digest, issuance record, and active
     Cache session, then apply idle Retention.
 
-An unknown `token_id`, token mismatch, unknown `kid`, missing key, key/session
+An unknown `token_id`, submitted-token mismatch, unknown `kid`, missing key, key/session
 mismatch, authentication-tag failure, token-digest mismatch, or invalid session
 prevents all query, modification, and revocation operations. `token_id` only
 accelerates lookup and never replaces validation of the complete token.

@@ -61,6 +61,10 @@ Autobricks JWT can create a token from records returned by a configured user dat
 
 - A compromised Web Service can misuse its WRITE APIKEY to create, modify, or revoke tokens within that registered service's permission.
 - A compromised Web Service or Policy service can misuse its READ APIKEY to retrieve fields authorized for that registered service.
+- A Web Service remains responsible for authenticating its end user and binding
+  each opaque JWT or `token_id` to the correct application session. Autobricks
+  JWT cannot correct a false user-to-session decision made by an authorized Web
+  Service.
 - A compromised source database can provide false records that result in cryptographically valid but incorrectly issued tokens.
 - Information already supplied by or returned to a compromised client is not protected from that client.
 - A compromised JWT Service can access complete payloads while processing requests.
