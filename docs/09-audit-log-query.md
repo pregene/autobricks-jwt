@@ -1,7 +1,5 @@
 # Audit Log Query
 
-Status: design outline.
-
 ## Scope
 
 Defines authorized querying and verification of Autobricks JWT audit evidence stored in Autobricks TrueLog, using the corresponding append receipt stored in the JWT database. Syslog copies are not authoritative audit evidence.

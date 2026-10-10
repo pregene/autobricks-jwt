@@ -13,6 +13,7 @@ Each lifecycle process is defined in one document. Process documents use the sam
 | 7 | JWT client deletion | [JWT Client Deletion](07-jwt-client-deletion.md) |
 | 8 | Operational log query | [Operational Log Query](08-operational-log-query.md) |
 | 9 | Audit log query | [Audit Log Query](09-audit-log-query.md) |
+| 10 | Runtime operation definitions | [Operation Definitions](10-operation-definitions.md) |
 
 ## Document Structure
 
@@ -31,4 +32,10 @@ Every process document contains these sections:
 11. Security boundaries
 12. Verification
 
-Shared architecture, error, logging, dependency, and database rules remain authoritative in the repository root documents. A process document narrows those rules for one lifecycle operation and does not redefine them globally.
+Shared architecture, operation, error, logging, dependency, and database rules
+remain authoritative in the repository root documents. Runtime operation names,
+permission classes, and common examples are defined in
+[Operation Definitions](10-operation-definitions.md). A process document narrows those rules for
+one lifecycle operation and does not redefine them globally.
+
+JWT and JOSE standards are listed in [JWT Standards References](../REFERENCES.md).

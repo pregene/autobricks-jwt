@@ -4,14 +4,20 @@
 
 Autobricks JWT writes security audit events to Autobricks TrueLog and stores the returned append receipt in its local database. The TrueLog event and the local receipt record have separate formats and responsibilities.
 
-Only these event categories are produced:
+Audit evidence is created for:
 
 1. Successful JWT issuance
 2. A request using an expired or nonexistent JWT session
+3. Privileged local inspection of a complete decrypted token
 
-No other JWT operation creates a TrueLog event.
+Each TrueLog event is also written to the operating server's
+syslog for local operational visibility. The syslog copy is not audit evidence;
+the TrueLog record is authoritative.
 
-Each `JWT_ISSUED` and `JWT_SESSION_INVALID` event is also written to the operating server's syslog for local operational visibility. The syslog copy is not audit evidence; the TrueLog record is authoritative.
+The local syslog form of `JWT_ISSUED` additionally records `request_id` and
+`token_id` so a privileged administrator can locate the corresponding
+SQLCipher records for local token inspection. These identifiers are not added
+to the TrueLog event.
 
 ## Common TrueLog Rules
 
@@ -91,6 +97,14 @@ Autobricks JWT does not write TrueLog events for:
 
 Changing this list requires an explicit architecture decision. Implementations must not introduce additional event categories implicitly.
 
+## Privileged Token Inspection Requirement
+
+Complete token inspection by a local root administrator is a TrueLog-audited
+security action. The audit evidence identifies the inspected operation without
+recording the encrypted token, token key, decrypted payload, or individual
+claim values. The returned TrueLog receipt is stored with the corresponding
+SQLCipher inspection record.
+
 ## Syslog Service Error Logging
 
 Every classified service failure writes a structured entry to the operating server's syslog, including failures that close a connection or map to a generic client response. Syslog is an operational service log for failure diagnosis. It is not an audit-evidence log, is not stored in TrueLog, and does not receive a TrueLog append receipt.
@@ -117,6 +131,28 @@ Rules:
 - Apply the prohibited-content rules to syslog as well as TrueLog events.
 - Syslog failure must not cause recursive error logging.
 
+## Local Issuance Identifiers
+
+The successful local syslog entry contains the issuance identifiers:
+
+```json
+{
+  "event": "JWT_ISSUED",
+  "service_id": "example-service",
+  "subject_type": "USER",
+  "request_id": "c2de26c8-5f40-4739-9298-1583ff40d338",
+  "token_id": "73475423-3470-4da3-b702-0d234b3632cd",
+  "result": "SUCCESS",
+  "event_at": "2026-01-01T00:00:00Z"
+}
+```
+
+`request_id` and `token_id` are permitted in the local operational entry and
+SQLCipher administrative history. Privileged-inspection evidence identifies
+the corresponding inspection without exposing token content. The TrueLog
+`JWT_ISSUED` payload remains the fixed format defined above and excludes both
+identifiers.
+
 ## Prohibited Content
 
 A TrueLog event must not contain:
@@ -133,6 +169,10 @@ A TrueLog event must not contain:
 - A TrueLog pairing code
 - A TrueLog append receipt
 - A stack trace or unrestricted error text
+
+Syslog follows the same prohibited-content rules except that the local
+`JWT_ISSUED` and privileged inspection records may contain `request_id` and
+`token_id`. Syslog must never contain the token, token key, or decrypted payload.
 
 ## Append Receipt
 
@@ -197,13 +237,3 @@ A `RECONCILE` event must not be blindly appended again because that can create a
 - Do not share one receipt between multiple local event records.
 - Concurrent writers may change the file between separate appends. The before/after checksum boundary applies only to the append that returned it.
 - Database queries and audit tools must treat the complete receipt as one atomic value.
-
-## Open Decisions
-
-The following behavior requires a separate architecture decision:
-
-- Whether JWT issuance is returned to the caller when TrueLog is unavailable
-- Whether an invalid-session response waits for TrueLog completion
-- Retry limits, retry delay, and reconciliation workflow
-- Local receipt-table layout and retention period
-- Maximum audit-event size

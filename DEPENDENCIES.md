@@ -63,13 +63,14 @@ The Autobricks TrueLog client provides durable WORM audit evidence and append re
 
 When it is installed and configured, Autobricks JWT:
 
-- Writes `JWT_ISSUED` and `JWT_SESSION_INVALID` to syslog and Autobricks TrueLog.
+- Writes JWT audit events to syslog and Autobricks TrueLog, including privileged
+  complete-token inspection.
 - Validates the returned append receipt.
 - Stores the receipt in the corresponding local JWT database record.
 
 When it is absent or not configured:
 
-- `JWT_ISSUED` and `JWT_SESSION_INVALID` are written to syslog only.
+- JWT audit events are written to syslog only.
 - No event is stored as TrueLog audit evidence.
 - No TrueLog append receipt is created or stored in the JWT database.
 - Ordinary service failures continue to use syslog.

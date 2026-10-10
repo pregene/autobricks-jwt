@@ -11,6 +11,7 @@
 
 # Local development instructions
 /AGENTS.md
+/TODO.md
 
 # Editor and operating-system files
 .DS_Store
@@ -25,4 +26,3 @@
 !.env.example
 *.key
 *.pem
-

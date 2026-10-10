@@ -1,0 +1,23 @@
+# JWT Standards References
+
+The following IETF specifications are the JWT and JOSE references for
+Autobricks JWT.
+
+## Specifications
+
+| Specification | Role | Main content | Implementation checks |
+| --- | --- | --- | --- |
+| [RFC 7519: JSON Web Token (JWT)](https://www.rfc-editor.org/rfc/rfc7519.html) | Defines token claims and processing rules. | Represents JSON claims as a JWS or JWE. Defines the registered claims `iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, and `jti`; public and private claims; the `typ` and `cty` headers; Nested JWTs; and token creation and validation. | Registered claims are not universally mandatory. Autobricks JWT defines its required claims and validation rules. Time claims use NumericDate, expressed as seconds from the Unix epoch. A JWT is not necessarily encrypted unless it is represented as a JWE. |
+| [RFC 7515: JSON Web Signature (JWS)](https://www.rfc-editor.org/rfc/rfc7515.html) | Defines integrity protection with digital signatures or MACs. | Defines signing, MAC generation, and validation. JWS Compact Serialization contains three parts: `Header.Payload.Signature`. JWS JSON Serialization supports multiple signatures. Defines header parameters including `alg`, `kid`, `jwk`, `jku`, `x5c`, and `crit`. | JWS does not hide its payload. Validation uses the exact encoded protected header and payload bytes. An unprotected JSON-serialization header is not integrity protected. A token with an unsupported critical `crit` extension is rejected. |
+| [RFC 7516: JSON Web Encryption (JWE)](https://www.rfc-editor.org/rfc/rfc7516.html) | Defines message encryption and integrity protection. | Defines content-encryption keys, key management, encryption, and decryption. JWE Compact Serialization contains five parts: `ProtectedHeader.EncryptedKey.IV.Ciphertext.Tag`. `alg` selects the key-management algorithm and `enc` selects the content-encryption algorithm. JWE JSON Serialization supports multiple recipients. | Plaintext is used only after successful authentication-tag validation. IVs and nonces follow the uniqueness and size requirements of the selected algorithm. JWE encryption alone does not establish a separate issuer digital signature. |
+| [RFC 7517: JSON Web Key (JWK)](https://www.rfc-editor.org/rfc/rfc7517.html) | Defines the JSON representation of cryptographic keys. | Defines a single JWK and a JWK Set. Common parameters include `kty`, `use`, `key_ops`, `alg`, and `kid`. It also defines certificate-related parameters, the `{"keys":[...]}` JWK Set structure, and encrypted JWK representation. | A JWK can contain a public key, private key, or symmetric key. Secret key material is never exposed through a public or client-facing representation. `kid` selects a candidate key but does not establish trust in that key. |
+| [RFC 7518: JSON Web Algorithms (JWA)](https://www.rfc-editor.org/rfc/rfc7518.html) | Defines JOSE algorithm identifiers and cryptographic operations. | Defines HMAC, RSA, ECDSA, and RSA-PSS operations for JWS; RSA key encryption, AES Key Wrap, ECDH-ES, direct symmetric-key use, and PBES2 for JWE key management; and AES-GCM and AES-CBC-HMAC content encryption. It also defines RSA, EC, and symmetric JWK parameters, key sizes, and signature formats. | Algorithm identifiers such as `HS256`, `RS256`, and `ES256` map to their exact defined operations. ECDSA signatures use fixed-length `R || S` encoding rather than DER encoding. Presence in the JWA registry does not automatically place an algorithm on the service allowlist. |
+| [RFC 8725: JSON Web Token Best Current Practices](https://www.rfc-editor.org/rfc/rfc8725.html) | Provides security guidance for JWT implementations and deployments. | Covers algorithm confusion, weak symmetric keys, incomplete signature or encryption validation, compression-related disclosure, token substitution, and cross-JWT confusion. Recommends algorithm verification, sufficient key entropy, validation of every cryptographic operation, UTF-8, issuer and audience validation, explicit token typing, and mutually exclusive validation rules for different token types. | The verifier restricts accepted algorithms and verifies the relationship between each key and algorithm. Every layer of a Nested JWT is validated. Untrusted `kid`, `jku`, and similar inputs cannot select arbitrary keys or resources. Tokens issued for different purposes use validation rules that prevent substitution. |
+
+## Application Boundary
+
+The RFCs define token formats, cryptographic structures, algorithms, claims,
+and validation requirements. Autobricks JWT separately defines service
+registration, APIKEY authorization, client permissions, field-level query
+authorization, session Cache behavior, SQLCipher persistence, and audit
+logging in this repository.

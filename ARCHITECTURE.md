@@ -111,10 +111,11 @@ Issuance processing:
 2. Verifies that the service can issue a JWT for the requested subject type.
 3. Resolves the configured source data.
 4. Constructs the complete JWT payload inside Autobricks JWT.
-5. Encrypts the complete payload.
-6. Inserts the active session into Autobricks Cache and persists it through the configured session path.
-7. Writes the successful issuance event to Autobricks TrueLog.
-8. Returns only the encrypted JWT.
+5. Generates a new content-encryption key that is used only for this token and encrypts the complete payload.
+6. Stores the encrypted token, recoverable token-specific key, and issuance/session history in SQLCipher.
+7. Inserts the active session into Autobricks Cache and its internal Session MAP.
+8. Writes the successful issuance event to syslog and, when configured, Autobricks TrueLog.
+9. Returns the encrypted JWT and its one-to-one UUID `token_id`.
 
 The caller knows data that it supplies itself but cannot obtain additional source fields or the complete constructed payload.
 
@@ -123,27 +124,19 @@ The caller knows data that it supplies itself but cannot obtain additional sourc
 The externally visible token is a JWE compact value:
 
 ```text
-BASE64URL(protected-header)
-.
-BASE64URL(encrypted-key)
-.
-BASE64URL(initialization-vector)
-.
-BASE64URL(ciphertext)
-.
-BASE64URL(authentication-tag)
+BASE64URL(protected-header)..BASE64URL(iv).BASE64URL(ciphertext).BASE64URL(tag)
 ```
 
-The protected header contains only the information required to process the encrypted token. The cryptographic algorithm profile remains a deployment-independent implementation decision.
+The empty second component is the JWE Encrypted Key position required by `alg: dir`. The protected header contains only the information required to process the encrypted token. The WRITE service registration selects one supported direct-key AES-GCM profile: `JWE_DIR_A128GCM`, `JWE_DIR_A192GCM`, or `JWE_DIR_A256GCM`.
 
-Logical protected header:
+Logical protected header for `JWE_DIR_A256GCM`:
 
 ```json
 {
-  "typ": "JWT",
-  "alg": "<key-management-algorithm>",
-  "enc": "<content-encryption-algorithm>",
-  "kid": "<key-identifier>"
+  "alg": "dir",
+  "enc": "A256GCM",
+  "typ": "autobricks+jwt",
+  "kid": "<token-key-uuid>"
 }
 ```
 
@@ -156,6 +149,7 @@ The ciphertext contains an encrypted logical payload:
   "subject_type": "USER",
   "aud": "example-service",
   "iat": 0,
+  "nbf": 0,
   "exp": 0,
   "jti": "<session-identifier>",
   "claims": {
@@ -168,7 +162,7 @@ The payload shown above is a logical internal structure, not a plaintext service
 
 ### 4. JWT Expiration Status Query
 
-The expiration-status operation accepts an encrypted JWT and a Query APIKEY. It does not return payload fields.
+The expiration-status operation accepts `token_id`, the complete encrypted JWT, and a Query APIKEY. It does not return payload fields.
 
 Processing:
 
@@ -199,7 +193,7 @@ The invalid response never distinguishes an expired session from a session that 
 
 ### 5. JWT Field Query
 
-The field-query operation accepts an encrypted JWT, a Query APIKEY, and an explicit field list.
+The field-query operation accepts `token_id`, the complete encrypted JWT, a Query APIKEY, and an explicit field list.
 
 Logical request:
 
@@ -251,7 +245,9 @@ A session is active only while both limits remain valid. When either limit expir
 
 ### 7. JWT Service Log Examples
 
-Autobricks JWT writes exactly two TrueLog event categories. The examples define the allowed security content; the transport envelope used by Autobricks TrueLog remains separate.
+Autobricks JWT creates TrueLog audit evidence for successful JWT issuance,
+expired or nonexistent session requests, and privileged local complete-token
+inspection. The examples below show issuance and invalid-session events.
 
 The normative event, prohibited-content, receipt-validation, and local receipt-state rules are defined in [LOGGING.md](LOGGING.md).
 
@@ -280,7 +276,7 @@ Expired or nonexistent session request:
 }
 ```
 
-The two events do not contain an APIKEY, JWT, `jti`, complete payload, decrypted field value, database credential, HSM credential, or cryptographic key. The invalid-session event always carries error code `8060`. Successful expiration-status queries, successful field queries, client-side decisions, Retention extension, and Cache activity do not create JWT TrueLog events.
+Audit events do not contain an APIKEY, JWT, `jti`, complete payload, decrypted field value, database credential, HSM credential, or cryptographic key. The invalid-session event always carries error code `8060`. Successful expiration-status queries, successful field queries, client-side decisions, Retention extension, and Cache activity do not create JWT TrueLog events.
 
 After TrueLog durably appends an event, it returns an append receipt containing `hostname`, `service`, and the before/after file name, file size, and checksum. Autobricks JWT stores that complete receipt in the corresponding local database record for the issuance or invalid-session event. The receipt is database evidence and is not added to the TrueLog event payload.
 
@@ -427,6 +423,16 @@ A caller necessarily knows values that it supplies itself. It does not gain acce
 
 Token encryption and complete payload decryption occur only inside Autobricks JWT. Registered client services receive neither JWT cryptographic keys nor a complete decrypted payload.
 
+A privileged local administrator can inspect a complete generated payload only
+through `sudo ab-jwt-cli` and the restricted management Unix-socket path. The
+operation requires matching `request_id` and `token_id`, root Unix peer
+credentials, and successful SQLCipher token/key validation. It is not exposed
+through Unix client service access for ordinary users, TCP, TLS, or mTLS. The
+plaintext is returned only to the invoking administrator terminal and is never
+written to syslog or TrueLog. Successful inspection requires separate TrueLog
+audit evidence without plaintext or key material. The returned append receipt
+is stored with the corresponding SQLCipher inspection record.
+
 The cryptographic component returns an encrypted token during issuance. During field query, it decrypts the complete payload only within the JWT Service process and passes only the authorized field projection to the response layer.
 
 ### Field Authorization
@@ -438,6 +444,14 @@ Field authorization evaluates the registered service, Query APIKEY, token contex
 Autobricks JWT directly supports PostgreSQL, MariaDB, MySQL, SQLite, and SQLCipher. Direct JWT database connections are independent of Autobricks Cache Connections and database adapters.
 
 Direct database access handles configured JWT service data, registration data, token source data, and session records.
+
+SQLCipher is the durable request-history, issuance-history, and token-key store. A JWT creation request must supply `client_id`, APIKEY, client-generated `request_id`, and the registered source's token-generation conditions. For a Database source, `conditions` is an array of `{field, value}` objects whose field names must exactly match the registered SELECT input fields; the registered field order determines SQL binding order. A separate `requests` row records `request_id`, `client_id`, the resolved `service_id`, `received_at`, processing status, completion time, assigned error code, and successful `jti` relationship. APIKEYs and raw subject conditions are not persisted in request history. The pair of `client_id` and `request_id` is unique and cannot silently create multiple tokens.
+
+The SQLCipher `operations` table contains the fixed runtime definitions `JWT_CREATE`, `JWT_UPDATE`, `JWT_REVOKE`, and `JWT_QUERY` with their required WRITE or READ operation class. Runtime requests resolve `operation` through this table before request-specific processing. Service registration cannot add or change operation definitions. The normative registry and examples are defined in [Operation Definitions](docs/10-operation-definitions.md).
+
+`JWT_UPDATE` is an upsert of the encrypted JWT's dynamic `claims` JSON object, not a requirement to update a Database row. It can replace an existing claim or add an application field that was absent from the original Database result and does not exist as a Database column. Reserved JWT metadata remains immutable, and JSON structure and payload limits are validated at runtime. Successful update preserves `token_id` and `jti`, generates a new token-specific encryption key and replacement encrypted token, invalidates the previous token version, records the version in SQLCipher, and atomically replaces the active Cache digest and key reference.
+
+Every issued token has a persistent record containing at least `client_id`, `service_id`, `request_id`, the UUID `token_id`, the encrypted `token`, its recoverable token-specific `token_key`, and `issued_at`. `token_id` is returned with the token, maps one-to-one to it, and is stored as the same UUID as the JWT `jti`. The same record also contains `kid`, expiration, session state, token digest, and audit-receipt state required for later validation and operation. The plaintext payload is not stored as issuance history. Each token uses an independently generated content-encryption key; a content-encryption key is never reused for another token. The key remains recoverable only inside `ab-jwtd` after SQLCipher is opened through the HSM-managed Database-key path so the token can later be authenticated and decrypted.
 
 The SQLCipher `clients` table is the authoritative certificate registration store. It associates a registered service with its client certificate SHA-256 fingerprint, URI SAN operation class, and active registration state. A valid certificate that has no active matching record is not authorized to use JWT operations.
 
@@ -459,10 +473,11 @@ Separate Caches can serve user, account, device, or other source records. Their 
 
 ### TrueLog Writer
 
-Autobricks JWT writes exactly two event categories:
+Autobricks JWT creates audit evidence for:
 
 1. Successful JWT issuance
 2. Expired or nonexistent session request
+3. Privileged local complete-token inspection
 
 An expired session and a nonexistent session use the same service error and TrueLog event category. Normal field queries, client-side decisions, Retention extension, and Cache activity do not create JWT TrueLog events.
 
@@ -476,12 +491,12 @@ Autobricks JWT stores operational service logs and audit-evidence logs separatel
 
 | Log class | Destination | Purpose | Content | TrueLog receipt |
 | --- | --- | --- | --- | --- |
-| Operational service log | Operating server syslog | Diagnose failures and provide local operational visibility for audit events | Assigned `error_code`, `error_name`, timestamp, redacted diagnostic context, and a copy of each `JWT_ISSUED` or `JWT_SESSION_INVALID` event | No |
-| Audit-evidence log | Autobricks TrueLog | Preserve evidence of successful JWT issuance and expired-or-nonexistent session requests | Only `JWT_ISSUED` and `JWT_SESSION_INVALID` events defined by `LOGGING.md` | Yes; stored in the corresponding JWT database record |
+| Operational service log | Operating server syslog | Diagnose failures and provide local operational visibility for audit events | Assigned `error_code`, `error_name`, timestamp, redacted diagnostic context, and a copy of each defined audit event | No |
+| Audit-evidence log | Autobricks TrueLog | Preserve evidence of issuance, invalid-session requests, and privileged complete-token inspection | Structured, redacted security events | Yes; stored in the corresponding JWT database record |
 
-Every `JWT_ISSUED` and `JWT_SESSION_INVALID` event is written to syslog as well as submitted to TrueLog. The syslog copy provides local operational visibility but is not audit evidence. TrueLog remains the authoritative audit-evidence destination.
+Every audit event is written to syslog as well as submitted to TrueLog. The syslog copy provides local operational visibility but is not audit evidence. TrueLog remains the authoritative audit-evidence destination.
 
-TrueLog submission and receipt persistence are enabled only when the Autobricks TrueLog client is installed and configured. Without it, the two audit events remain in syslog only and no TrueLog evidence or receipt exists. A runtime delivery failure after TrueLog has been enabled follows the audit failure and reconciliation rules; it is not treated as an intentional syslog-only profile change.
+TrueLog submission and receipt persistence are enabled only when the Autobricks TrueLog client is installed and configured. Without it, audit events remain in syslog only and no TrueLog evidence or receipt exists. A runtime delivery failure after TrueLog has been enabled follows the audit failure and reconciliation rules; it is not treated as an intentional syslog-only profile change.
 
 Other operational syslog entries are not submitted to TrueLog merely because they contain an error code. Syslog entries do not create TrueLog append receipts or audit-receipt database records, and the TrueLog receipt is not added to the syslog copy.
 
@@ -491,7 +506,7 @@ The two log paths must use separate writers and failure handling. A failure in o
 
 ### Key Store
 
-JWT key data is stored in a SQLCipher-encrypted database. The SQLCipher database key is managed through an HSM. JWT cryptographic keys and the SQLCipher database key are not returned through service interfaces.
+JWT key data is stored in a SQLCipher-encrypted database. The SQLCipher database key is managed through an HSM. Each token receives a new random content-encryption key, and that recoverable secret key is persisted only inside SQLCipher with its issuance record. The JWE `kid` selects the candidate key record; successful authenticated decryption and matching `jti`, service, digest, expiration, and active Cache session establish validity. JWT cryptographic keys and the SQLCipher database key are not returned through service interfaces.
 
 This boundary minimizes key exposure but does not treat root access to the JWT Service host as safe. A privileged host attacker may inspect runtime plaintext, obtain material available to the process, or invoke cryptographic operations available to the service.
 
@@ -502,6 +517,7 @@ sequenceDiagram
     participant W as Web Service
     participant J as Autobricks JWT
     participant D as Direct Database
+    participant S as SQLCipher
     participant C as Autobricks Cache
     participant T as Autobricks TrueLog
 
@@ -513,9 +529,9 @@ sequenceDiagram
     else JSON or service source is configured
         J->>J: Resolve configured source data
     end
-    J->>J: Build and encrypt complete payload
-    J->>C: Insert active session
-    C->>D: Persist session through Cache WRITE Queue
+    J->>J: Generate unique token key and encrypt payload
+    J->>S: Store encrypted token, protected key, and issuance history
+    J->>C: Insert active session and Session MAP entry
     J->>T: Write successful issuance event
     J-->>W: Encrypted JWT
 ```
@@ -578,23 +594,6 @@ The authoritative `8000` through `8100` error registry, response envelope, expos
 - Registered client services cannot obtain the complete decrypted payload.
 - Direct database support is independent of Autobricks Cache.
 - Autobricks Cache is consumed through its existing public behavior.
-- JWT issuance and common invalid-session failure are the only JWT TrueLog event categories.
+- JWT issuance, common invalid-session failure, and privileged local complete-token inspection create JWT TrueLog audit evidence.
 - SQLCipher protects JWT key data at rest, and an HSM manages the SQLCipher database key.
 - Root compromise of the JWT Service host remains outside the protected trust boundary.
-
-## Open Design Decisions
-
-The following implementation details are not fixed by this architecture:
-
-- Wire message framing and operation names
-- JWT and JWE algorithm profiles
-- APIKEY format, hashing, rotation, revocation, and recovery
-- Service-registration authority and administrative workflow
-- Field-authorization configuration format
-- Database schema and query configuration format beyond the required SQLCipher `clients` registration table
-- Session identifier and database record format
-- Cache Definition identifiers and field layout
-- HSM provider, PKCS #11 profile, and recovery procedure
-- Concurrency, request-size, and rate limits
-- Keep-alive maximum connection lifetime, request limit, certificate-status refresh interval, and allowed bounds for the default and per-client idle timeout
-- Error codes and response schema

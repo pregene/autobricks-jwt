@@ -202,19 +202,21 @@ TLS and mutual TLS require an installed and configured Autobricks PKI client. Wi
 
 ## True Log Events
 
-When the Autobricks TrueLog client is installed and configured, Autobricks JWT writes exactly two event categories to Autobricks TrueLog:
+When the Autobricks TrueLog client is installed and configured, Autobricks JWT writes audit evidence for:
 
 1. Successful JWT issuance
 2. Expired or nonexistent session request
+3. Privileged local complete-token inspection
 
 Successful field queries, policy evaluation, session retention extension, and Cache activity do not create JWT TrueLog events.
 
-Without the Autobricks TrueLog client, the two events are written only to syslog and no immutable audit evidence or append receipt is produced. For secure deployment requirements and installation order, see [DEPENDENCIES.md](DEPENDENCIES.md).
+Without the Autobricks TrueLog client, these events are written only to syslog and no immutable audit evidence or append receipt is produced. For secure deployment requirements and installation order, see [DEPENDENCIES.md](DEPENDENCIES.md).
 
 ## Security Boundaries
 
 - Token payload encryption and decryption occur only inside Autobricks JWT.
-- Complete payload decryption exists only as an internal JWT Service operation.
+- Complete payload decryption is unavailable to service clients; only the
+  privileged local root inspection path can display it.
 - Web Services and Autobricks Policy cannot obtain a complete decrypted payload.
 - Web Services and Autobricks Policy do not receive decryption keys.
 - Issuance and Query APIKEYs have separate permissions.
@@ -233,6 +235,15 @@ Without the Autobricks TrueLog client, the two events are written only to syslog
 ## Process Documentation
 
 Process-level design documents are indexed in [docs/README.md](docs/README.md). Each registration, token, and deletion lifecycle process is maintained as a separate document.
+
+Runtime request names, required READ or WRITE permission classes, and common
+request examples are defined in
+[Operation Definitions](docs/10-operation-definitions.md).
+
+## JWT Standards
+
+JWT, JWS, JWE, JWK, JWA, and JWT security references are listed in
+[REFERENCES.md](REFERENCES.md).
 
 ## License
 

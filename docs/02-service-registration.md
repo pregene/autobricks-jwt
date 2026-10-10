@@ -36,6 +36,74 @@ A WRITE registration defines exactly one subject source. The source is either
 Connection and Cache Definition contracts without a JWT-specific alternative
 schema.
 
+### JWT Encryption Profile Selection
+
+Every WRITE service registration selects exactly one JWT encryption profile.
+The registration client makes this selection; `ab-jwtd` does not silently
+choose an algorithm for the service.
+
+`ab-jwt-cli` obtains the profiles enabled by `ab-jwtd` and displays only those
+profiles as selectable values. The operator selects one profile before the
+APIKEY is created. The registration request carries the selected profile name,
+not caller-defined `alg`, `enc`, key-size, IV-size, or tag-size strings.
+
+The supported profiles are:
+
+| Profile | Serialization | `alg` | `enc` | Content-encryption key | IV | Authentication tag |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| `JWE_DIR_A128GCM` | JWE Compact | `dir` | `A128GCM` | 128 bits | 96 bits | 128 bits |
+| `JWE_DIR_A192GCM` | JWE Compact | `dir` | `A192GCM` | 192 bits | 96 bits | 128 bits |
+| `JWE_DIR_A256GCM` | JWE Compact | `dir` | `A256GCM` | 256 bits | 96 bits | 128 bits |
+
+These profiles use the JWE and JWA definitions in RFC 7516 and RFC 7518. Each
+uses direct symmetric key management and AES-GCM authenticated encryption. The
+JWE Encrypted Key component is empty for `alg: dir`.
+
+Logical profile selection:
+
+```json
+{
+  "jwt_encryption_profile": "JWE_DIR_A256GCM"
+}
+```
+
+Registration rejects an omitted profile, an unknown profile, a disabled
+profile, or an attempt to submit raw JOSE algorithm parameters. READ service
+registration does not select an encryption profile because it does not issue
+tokens.
+
+The selected profile is stored with `service_id` and bound to the WRITE APIKEY.
+Every JWT issued through that APIKEY uses the stored profile. A runtime
+`JWT_CREATE` request cannot supply or override `jwt_encryption_profile`, `alg`,
+`enc`, `typ`, key size, IV size, or authentication-tag size.
+
+The service-registration result returns the selected profile and resolved JOSE
+parameters with the APIKEY:
+
+```json
+{
+  "service_id": "<service-uuid>",
+  "client_id": "<write-client-uuid>",
+  "operation_class": "WRITE",
+  "apikey": "<write-apikey>",
+  "jwt_encryption_profile": {
+    "name": "JWE_DIR_A256GCM",
+    "serialization": "JWE_COMPACT",
+    "alg": "dir",
+    "enc": "A256GCM",
+    "typ": "autobricks+jwt",
+    "key_bits": 256,
+    "iv_bits": 96,
+    "tag_bits": 128
+  }
+}
+```
+
+The returned object allows the registering client to verify that the stored
+profile matches its selection. The APIKEY remains an authorization credential;
+it is not an encryption key and does not reveal the token-specific
+content-encryption key.
+
 ### CLIENT_JSON Source
 
 `CLIENT_JSON` allows the WRITE client to supply the subject data in the JWT
@@ -181,13 +249,21 @@ Conceptually, Autobricks JWT constructs an internal value before encryption:
 
 ```json
 {
+  "iss": "autobricks-jwt",
+  "sub": "<subject-identifier>",
+  "aud": "<registered-service-id>",
+  "iat": 0,
+  "nbf": 0,
+  "exp": 0,
   "jti": "...",
   "subject_type": "USER",
-  "id": "...",
-  "user_id": "...",
-  "last_ip": "...",
-  "created_at": "...",
-  "role": "..."
+  "claims": {
+    "id": "...",
+    "user_id": "...",
+    "last_ip": "...",
+    "created_at": "...",
+    "role": "..."
+  }
 }
 ```
 
@@ -284,7 +360,7 @@ Autobricks JWT subject source; their fixed Cache Definition entries remain
 empty.
 
 A successful WRITE registration returns one `apikey` bound to the service,
-WRITE `client_id`, and subject type.
+WRITE `client_id`, subject type, and selected JWT encryption profile.
 
 ## READ Service Configuration
 

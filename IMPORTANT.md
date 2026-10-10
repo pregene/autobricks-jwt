@@ -19,7 +19,9 @@ Autobricks JWT removes JWT encryption and decryption keys from Web Services and 
 - A Query APIKEY returns only fields authorized for the registered service.
 - Issuance and Query APIKEYs have separate permissions, which limits the operations available after one credential is compromised.
 - TLS and mutual TLS protect supported network service connections; Unix domain sockets provide a local service boundary.
-- JWT issuance and invalid-session requests produce the two defined Autobricks TrueLog event categories without recording keys, tokens, payloads, or decrypted field values.
+- JWT issuance, invalid-session requests, and privileged local token inspection
+  create TrueLog evidence. None of these records contains keys, tokens,
+  payloads, or decrypted field values.
 
 Encrypted JWT payloads use the confidentiality boundary defined by JSON Web Encryption. JWE defines content encryption and key-management modes; it does not remove the need to protect the decryption keys. [RFC 7516: JSON Web Encryption](https://www.rfc-editor.org/rfc/rfc7516.html)
 
