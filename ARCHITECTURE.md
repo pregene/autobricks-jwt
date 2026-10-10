@@ -433,6 +433,12 @@ Keep-alive uses a sliding idle timeout measured in seconds. The service configur
 
 ```yaml
 timeout: 3600
+backup_directory: /var/lib/autobricks-jwt/backups
+backup_interval_days: 30
+log_request: true
+log_query: true
+log_issuance: true
+log_audit: true
 ```
 
 `3600` is an example configuration value, not a protocol constant. Each registered client can have its own keep-alive timeout in the SQLCipher `clients` record. A client-specific value overrides the configuration default; otherwise, the configured `timeout` applies. After each successfully authenticated and processed request, the connection's idle deadline is renewed to `now + effective_timeout`, capped by the absolute connection deadline. Unauthenticated bytes, malformed frames, and rejected requests do not renew it. When the idle deadline is reached, the server closes the connection so the client reconnects and authenticates again.

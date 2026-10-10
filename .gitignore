@@ -8,6 +8,8 @@
 /build/
 /packaging/
 /scripts/
+/config/
+/test/
 
 # Local development instructions
 /AGENTS.md

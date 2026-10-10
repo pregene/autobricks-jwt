@@ -20,6 +20,7 @@ Each lifecycle process is defined in one document. Process documents use the sam
 | 14 | Recovery | [Recovery](14-recovery.md) |
 | 15 | Certificate renewal | [Certificate Renewal](15-certificate-renewal.md) |
 | 16 | Service certificate | [Service Certificate](16-service-certificate.md) |
+| 17 | Feature list | [Feature List](17-feature-list.md) |
 
 Shared architecture, operation, error, logging, dependency, and database rules
 remain authoritative in the repository root documents. Runtime operation names,

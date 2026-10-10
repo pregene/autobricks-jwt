@@ -1,0 +1,960 @@
+Autobricks JWT Server Test 0.1.28
+Building ab-jwtd...
+    Finished `release` profile [optimized] target(s) in 0.28s
+
+[TEST 001]
+Purpose : Build and install the release test binary
+Expected: release build succeeds and <redacted-test-path> is executable
+Actual  : release build succeeded; executable installed at <redacted-path>
+Result  : PASS
+
+Running Unix socket creation and permission verification...
+
+[TEST 002]
+Purpose : Create the ab-jwtd Unix socket
+Expected: a real Unix socket is bound at a unique absolute path under <redacted-path>
+Actual  : Unix socket created: <redacted-path><redacted-secret>/ab-jwtd.sock
+Result  : PASS
+
+[TEST 003]
+Purpose : Verify the created filesystem object type
+Expected: the created path is a Unix socket, not a regular file
+Actual  : Unix socket file type: socket
+Result  : PASS
+
+[TEST 004]
+Purpose : Verify Unix socket access permissions
+Expected: socket mode is exactly 0660
+Actual  : Unix socket mode: 0660
+Result  : PASS
+
+[TEST 005]
+Purpose : Verify Unix socket parent-directory permissions
+Expected: parent-directory mode is exactly 0750
+Actual  : Unix socket parent mode: 0750
+Result  : PASS
+
+[TEST 006]
+Purpose : Verify that unprivileged world access is disabled
+Expected: socket and parent directory have no world permission bits
+Actual  : Unix socket world access: denied
+Result  : PASS
+
+[TEST 007]
+Purpose : Remove the Unix socket after the test
+Expected: socket path and temporary parent directory no longer exist
+Actual  : Unix socket cleanup: removed
+Result  : PASS
+
+Running TCP listener verification...
+
+[TEST 008]
+Purpose : Bind the TCP listener on loopback
+Expected: a TCP listener receives an operating-system assigned loopback port
+Actual  : TCP listener bound: <redacted-loopback>
+Result  : PASS
+
+[TEST 009]
+Purpose : Accept a TCP client connection
+Expected: the listener accepts the loopback client
+Actual  : TCP connection: accepted
+Result  : PASS
+
+[TEST 010]
+Purpose : Exchange data over the TCP connection
+Expected: the server receives PING and the client receives PONG
+Actual  : TCP data exchange: PING/PONG verified
+Result  : PASS
+
+Running TLS listener verification with Autobricks PKI certificate...
+
+[TEST 011]
+Purpose : Bind the TLS listener on loopback
+Expected: the TLS listener receives an operating-system assigned loopback port
+Actual  : TLS listener bound: <redacted-loopback>
+Result  : PASS
+
+[TEST 012]
+Purpose : Load the PKI-issued TLS server identity
+Expected: the downloaded server certificate and private key form a usable identity
+Actual  : TLS server certificate: Autobricks PKI certificate loaded
+Result  : PASS
+
+[TEST 013]
+Purpose : Verify the TLS server certificate chain
+Expected: the client accepts the server certificate through the downloaded trust chain
+Actual  : TLS trust chain: verified
+Result  : PASS
+
+[TEST 014]
+Purpose : Complete a server-authenticated TLS handshake
+Expected: the client and listener complete the TLS handshake
+Actual  : TLS handshake: accepted
+Result  : PASS
+
+[TEST 015]
+Purpose : Exchange application data through TLS
+Expected: PING and PONG are transferred through the encrypted stream
+Actual  : TLS encrypted data exchange: PING/PONG verified
+Result  : PASS
+
+Running mTLS listener verification with Autobricks PKI certificates...
+
+[TEST 016]
+Purpose : Bind the mTLS listener on loopback
+Expected: an mTLS listener accepts local test connections
+Actual  : mTLS listener: bound on loopback
+Result  : PASS
+
+[TEST 017]
+Purpose : Load the PKI-issued mTLS server identity
+Expected: the downloaded server certificate and private key form a usable identity
+Actual  : mTLS server certificate: Autobricks PKI certificate loaded
+Result  : PASS
+
+[TEST 018]
+Purpose : Authenticate the PKI-issued client certificate
+Expected: a client certificate chaining to the configured trust chain is accepted
+Actual  : mTLS client certificate: trusted certificate accepted
+Result  : PASS
+
+[TEST 019]
+Purpose : Exchange application data through mTLS
+Expected: PING and PONG are transferred after mutual authentication
+Actual  : mTLS encrypted data exchange: PING/PONG verified
+Result  : PASS
+
+[TEST 020]
+Purpose : Reject a client that presents no certificate
+Expected: the mandatory client-certificate handshake fails closed
+Actual  : mTLS missing client certificate: rejected
+Result  : PASS
+
+[TEST 021]
+Purpose : version uses VERSION
+Expected: exit=0 and output contains 'Autobricks JWT Server 0.1.28'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.28
+Result  : PASS
+
+[TEST 022]
+Purpose : help names configuration validation
+Expected: exit=0 and output contains 'ab-jwtd --check-config PATH'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.28 (C) 2026 Autobricks, Co.
+Usage:
+ab-jwtd --check-config PATH
+ab-jwtd --config PATH
+ab-jwtd --help
+ab-jwtd --version
+
+Options:
+--check-config PATH  Validate the server configuration without starting listeners.
+-h, --help           Show this help and exit.
+-V, --version        Show the program version and exit.
+Result  : PASS
+
+[TEST 023]
+Purpose : no arguments display help
+Expected: exit=0 and output contains 'Usage:'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.28 (C) 2026 Autobricks, Co.
+Usage:
+ab-jwtd --check-config PATH
+ab-jwtd --config PATH
+ab-jwtd --help
+ab-jwtd --version
+
+Options:
+--check-config PATH  Validate the server configuration without starting listeners.
+-h, --help           Show this help and exit.
+-V, --version        Show the program version and exit.
+Result  : PASS
+
+[TEST 024]
+Purpose : minimal configuration uses secure token default
+Expected: exit=0 and output contains 'Require complete token for query and revoke: true'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.28
+Configuration: valid
+Keep-alive timeout: 3600 seconds
+Require complete token for query and revoke: true
+Certificate renewal time: 04:00
+Backup directory: <redacted-path>
+Backup interval: 30 days
+Result  : PASS
+
+[TEST 025]
+Purpose : minimal configuration uses 04:00 renewal default
+Expected: exit=0 and output contains 'Certificate renewal time: 04:00'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.28
+Configuration: valid
+Keep-alive timeout: 3600 seconds
+Require complete token for query and revoke: true
+Certificate renewal time: 04:00
+Backup directory: <redacted-path>
+Backup interval: 30 days
+Result  : PASS
+
+[TEST 026]
+Purpose : explicit configuration is accepted
+Expected: exit=0 and output contains 'Certificate renewal time: 23:45'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.28
+Configuration: valid
+Keep-alive timeout: 900 seconds
+Require complete token for query and revoke: false
+Certificate renewal time: 23:45
+Backup directory: <redacted-path>
+Backup interval: 7 days
+Result  : PASS
+
+[TEST 027]
+Purpose : missing configuration file returns 8090
+Expected: exit is nonzero and output contains 'error_code=8090 error_name=CONFIGURATION_INVALID'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=configuration file cannot be read
+Result  : PASS
+
+[TEST 028]
+Purpose : missing timeout is rejected
+Expected: exit is nonzero and output contains 'missing 'timeout' setting'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=missing 'timeout' setting
+Result  : PASS
+
+[TEST 029]
+Purpose : zero timeout is rejected
+Expected: exit is nonzero and output contains 'timeout must be between 1 and 86400 seconds'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=timeout must be between 1 and 86400 seconds
+Result  : PASS
+
+[TEST 030]
+Purpose : timeout above maximum is rejected
+Expected: exit is nonzero and output contains 'timeout must be between 1 and 86400 seconds'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=timeout must be between 1 and 86400 seconds
+Result  : PASS
+
+[TEST 031]
+Purpose : non-integer timeout is rejected
+Expected: exit is nonzero and output contains 'timeout must be an integer'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=timeout must be an integer
+Result  : PASS
+
+[TEST 032]
+Purpose : invalid boolean is rejected
+Expected: exit is nonzero and output contains 'must be true or false'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message='<redacted-secret>' must be true or false
+Result  : PASS
+
+[TEST 033]
+Purpose : invalid renewal time is rejected
+Expected: exit is nonzero and output contains 'outside the valid daily range'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=certificate_renewal_time is outside the valid daily range
+Result  : PASS
+
+[TEST 034]
+Purpose : duplicate setting is rejected
+Expected: exit is nonzero and output contains 'configuration key 'timeout' is duplicated'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=configuration key 'timeout' is duplicated
+Result  : PASS
+
+[TEST 035]
+Purpose : unknown setting is rejected
+Expected: exit is nonzero and output contains 'unknown configuration key 'secret''
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=unknown configuration key 'secret'
+Result  : PASS
+
+[TEST 036]
+Purpose : malformed setting is rejected
+Expected: exit is nonzero and output contains 'must contain ':''
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=configuration line 1 must contain ':'
+Result  : PASS
+
+[TEST 037]
+Purpose : unknown command-line option returns 8090
+Expected: exit is nonzero and output contains 'error_code=8090 error_name=CONFIGURATION_INVALID'
+Actual  : exit=1; output=error_code=8090 error_name=CONFIGURATION_INVALID message=invalid ab-jwtd command-line arguments
+Result  : PASS
+
+Running Autobricks Cache token creation and verification...
+
+[TEST 038]
+Purpose : Issue the WRITE test client
+Expected: one nonempty client_id with operation class WRITE
+Actual  : Client issued: <redacted-secret> (WRITE)
+Result  : PASS
+
+[TEST 039]
+Purpose : Issue multiple services under the test client
+Expected: three distinct service_id values for login, refresh, and logout
+Actual  : Service issued: <redacted-secret> (web-service-login)
+Service issued: <redacted-secret> (web-service-refresh)
+Service issued: <redacted-secret> (web-service-logout)
+Result  : PASS
+
+[TEST 040]
+Purpose : Authorize a service with its own APIKEY
+Expected: matching client_id, service_id, APIKEY, and WRITE operation are accepted
+Actual  : Service APIKEY verification: matching service accepted
+Result  : PASS
+
+[TEST 041]
+Purpose : Reject an APIKEY issued to another service
+Expected: cross-service APIKEY use returns 8001 INVALID_REQUEST
+Actual  : Service APIKEY isolation: cross-service use rejected with 8001 INVALID_REQUEST
+Result  : PASS
+
+[TEST 042]
+Purpose : Load the Autobricks Cache shared library
+Expected: the current Cache C ABI is loaded from the configured shared library
+Actual  : Autobricks Cache library: loaded
+Result  : PASS
+
+[TEST 043]
+Purpose : Initialize the user Cache as ON_DEMAND
+Expected: the Cache begins without preloading all 1000 users
+Actual  : Autobricks Cache mode: ON_DEMAND
+Result  : PASS
+
+[TEST 044]
+Purpose : Select the registered user_id MAP
+Expected: subject lookup uses the user_id MAP rather than a record scan
+Actual  : Autobricks Cache MAP: user_id
+Result  : PASS
+
+[TEST 045]
+Purpose : Confirm the initial ON_DEMAND Cache state
+Expected: zero user records are resident before the first lookup
+Actual  : Autobricks Cache initial records: 0
+Result  : PASS
+
+[TEST 046]
+Purpose : Load user-0001 through the Cache miss path
+Expected: one PostgreSQL record becomes resident after the first user_id lookup
+Actual  : Autobricks Cache loaded records: 1
+Result  : PASS
+
+[TEST 047]
+Purpose : Query the resident user record again
+Expected: the repeated user_id MAP result exactly matches the first result
+Actual  : Autobricks Cache repeated lookup: matched
+Result  : PASS
+
+[TEST 048]
+Purpose : Create an encrypted token for user-0001
+Expected: a nonempty token_id is issued using the login service_id as audience
+Actual  : Token created: <redacted-secret>
+Result  : PASS
+
+[TEST 049]
+Purpose : Validate the issued token encryption format
+Expected: JWE Compact with A256GCM
+Actual  : Token format: JWE Compact A256GCM
+Result  : PASS
+
+[TEST 050]
+Purpose : Verify and query the issued token
+Expected: user_id, display_name, role, and status match the Cache subject record
+Actual  : Token verification: authorized fields matched
+Result  : PASS
+
+[TEST 051]
+Purpose : Reject a modified encrypted token
+Expected: tampered token returns 8061 JWT_INVALID
+Actual  : Token tamper check: rejected with 8061 JWT_INVALID
+Result  : PASS
+
+[TEST 052]
+Purpose : Stop the Cache runtime after token verification
+Expected: Cache uninitialization completes before registration cleanup
+Actual  : Autobricks Cache shutdown: completed
+Result  : PASS
+
+[TEST 053]
+Purpose : Delete one registered service explicitly
+Expected: the login service_id is removed before client deletion
+Actual  : Service deleted: <redacted-secret>
+Result  : PASS
+
+[TEST 054]
+Purpose : Delete the parent test client
+Expected: the issued client_id is deleted
+Actual  : Client deleted: <redacted-secret>
+Result  : PASS
+
+[TEST 055]
+Purpose : Cascade client deletion to remaining services
+Expected: the refresh and logout services are both deleted
+Actual  : Cascaded services deleted: 2
+Result  : PASS
+
+[TEST 056]
+Purpose : Revoke credentials during test cleanup
+Expected: all three service APIKEYs are unusable
+Actual  : APIKEYs revoked: 3 total
+Result  : PASS
+
+[TEST 057]
+Purpose : Confirm final test registration cleanup
+Expected: zero active clients and zero active services remain
+Actual  : Registration cleanup: no active client or service remains
+Result  : PASS
+
+Running complete JWT error registry verification...
+
+[TEST 058]
+Purpose : Enumerate every non-reserved JWT error assigned by ERROR.md
+Expected: 67 unique code, name, and exposure entries are printed exactly once
+Actual  : Error registry: 8000 INTERNAL_ERROR GENERIC
+Error registry: 8001 INVALID_REQUEST PUBLIC
+Error registry: 8002 UNSUPPORTED_OPERATION PUBLIC
+Error registry: 8003 UNSUPPORTED_PROTOCOL_VERSION PUBLIC
+Error registry: 8004 REQUEST_TOO_LARGE PUBLIC
+Error registry: 8005 MALFORMED_FRAME CLOSE
+Error registry: 8006 REQUEST_TIMEOUT PUBLIC
+Error registry: 8007 RATE_LIMITED PUBLIC
+Error registry: 8008 TOO_MANY_REQUESTS PUBLIC
+Error registry: 8009 SERVICE_UNAVAILABLE GENERIC
+Error registry: 8010 CLIENT_CERTIFICATE_REQUIRED CLOSE
+Error registry: 8011 CERTIFICATE_CHAIN_INVALID CLOSE
+Error registry: 8012 CERTIFICATE_TIME_INVALID CLOSE
+Error registry: 8013 CERTIFICATE_PURPOSE_INVALID CLOSE
+Error registry: 8014 CERTIFICATE_AIA_OCSP_MISSING CLOSE
+Error registry: 8015 OCSP_UNAVAILABLE CLOSE
+Error registry: 8016 OCSP_RESPONSE_INVALID CLOSE
+Error registry: 8017 CERTIFICATE_REVOKED CLOSE
+Error registry: 8018 CERTIFICATE_STATUS_UNKNOWN CLOSE
+Error registry: 8019 CERTIFICATE_NOT_REGISTERED CLOSE
+Error registry: 8020 CLIENT_REGISTRATION_INACTIVE CLOSE
+Error registry: 8021 CERTIFICATE_USAGE_INVALID CLOSE
+Error registry: 8022 CERTIFICATE_USAGE_MISMATCH CLOSE
+Error registry: 8023 CONNECTION_IDENTITY_CHANGED CLOSE
+Error registry: 8024 CONNECTION_IDLE_TIMEOUT CLOSE
+Error registry: 8025 CONNECTION_LIFETIME_EXCEEDED CLOSE
+Error registry: 8026 CERTIFICATE_CONNECTION_EXPIRED CLOSE
+Error registry: 8027 <redacted-secret> CLOSE
+Error registry: 8028 <redacted-secret> CLOSE
+Error registry: 8029 CERTIFICATE_HANDOVER_FAILED INTERNAL
+Error registry: 8030 APIKEY_AUTHENTICATION_FAILED GENERIC
+Error registry: 8031 APIKEY_OPERATION_FORBIDDEN PUBLIC
+Error registry: 8032 OPERATION_CLASS_MISMATCH PUBLIC
+Error registry: 8040 SERVICE_NOT_REGISTERED GENERIC
+Error registry: 8041 SERVICE_REGISTRATION_INACTIVE GENERIC
+Error registry: 8042 SUBJECT_TYPE_FORBIDDEN PUBLIC
+Error registry: 8043 FIELD_QUERY_FORBIDDEN PUBLIC
+Error registry: 8044 <redacted-secret> INTERNAL
+Error registry: 8050 JWT_ISSUANCE_FAILED GENERIC
+Error registry: 8051 INVALID_SUBJECT PUBLIC
+Error registry: 8052 SOURCE_NOT_CONFIGURED PUBLIC
+Error registry: 8053 SOURCE_DATA_UNAVAILABLE GENERIC
+Error registry: 8054 SOURCE_DATA_INVALID GENERIC
+Error registry: 8055 JWT_ENCRYPTION_FAILED INTERNAL
+Error registry: 8056 SESSION_CREATE_FAILED INTERNAL
+Error registry: 8060 SESSION_NOT_FOUND_OR_EXPIRED GENERIC
+Error registry: 8061 JWT_INVALID GENERIC
+Error registry: 8062 JWT_AUDIENCE_INVALID GENERIC
+Error registry: 8063 FIELD_LIST_INVALID PUBLIC
+Error registry: 8064 FIELD_NOT_AUTHORIZED PUBLIC
+Error registry: 8065 FIELD_VALUE_UNAVAILABLE GENERIC
+Error registry: 8066 SESSION_RETENTION_FAILED INTERNAL
+Error registry: 8070 AUDIT_WRITE_FAILED INTERNAL
+Error registry: 8071 AUDIT_RECEIPT_INVALID INTERNAL
+Error registry: 8072 AUDIT_RECEIPT_STORE_FAILED INTERNAL
+Error registry: 8073 AUDIT_RECONCILIATION_REQUIRED INTERNAL
+Error registry: 8080 DATABASE_UNAVAILABLE INTERNAL
+Error registry: 8081 DATABASE_OPERATION_FAILED INTERNAL
+Error registry: 8082 CACHE_UNAVAILABLE INTERNAL
+Error registry: 8083 CACHE_OPERATION_FAILED INTERNAL
+Error registry: 8084 KEY_STORE_UNAVAILABLE INTERNAL
+Error registry: 8085 HSM_UNAVAILABLE INTERNAL
+Error registry: 8086 KEY_OPERATION_FAILED INTERNAL
+Error registry: 8090 CONFIGURATION_INVALID INTERNAL
+Error registry: 8091 DEPENDENCY_UNAVAILABLE INTERNAL
+Error registry: 8092 SHUTTING_DOWN GENERIC
+Error registry: 8093 CAPACITY_EXCEEDED GENERIC
+Error registry count: 67
+Result  : PASS
+
+[TEST 059]
+Purpose : Construct every assigned JWT error and reject reserved codes
+Expected: all 67 assigned errors preserve code and name; representative reserved codes have no construction path
+Actual  : all assigned constructors passed; reserved codes rejected
+Result  : PASS
+
+Running Autobricks TrueLog audit evidence and SQLCipher receipt persistence...
+
+[TEST 060]
+Purpose : Locate the configured Autobricks TrueLog client
+Expected: ab-truelog-cli is installed and available on PATH
+Actual  : Autobricks True Log Client 0.3.62 (C) 2026 Autobricks, Co.
+Result  : PASS
+
+[TEST 061]
+Purpose : Append the JWT_ISSUED audit event through the configured TrueLog client
+Expected: mTLS-backed TrueLog append succeeds and returns a JSON receipt
+Actual  : {
+  "after": {
+    "checksum": "<redacted-hex>",
+    "file": "truelog-2026-10-11.log",
+    "filesize": 1656
+  },
+  "before": {
+    "checksum": "<redacted-hex>",
+    "file": "truelog-2026-10-11.log",
+    "filesize": 1472
+  },
+  "hostname": "<redacted>",
+  "service": "autobricks-jwt"
+}
+Result  : PASS
+
+[TEST 062]
+Purpose : Validate the complete TrueLog append receipt
+Expected: identity, file boundary, increasing size, and both SHA-256 values satisfy LOGGING.md
+Actual  : validated service=autobricks-jwt file=truelog-2026-10-11.log bytes=1472->1656
+Result  : PASS
+
+[TEST 063]
+Purpose : Confirm the changed WORM file through ab-truelog-cli info
+Expected: current lock_offset equals the append receipt after.filesize (1656)
+Actual  : {
+  "checksum": "<redacted-hex>",
+  "created_at": 3924300,
+  "format_version": 1,
+  "lock_offset": 1656,
+  "retain_until": 35460300,
+  "sha256_state": [
+    106,
+    131,
+    84,
+    194,
+    173,
+    115,
+    57,
+    197,
+    48,
+    219,
+    21,
+    93,
+    24,
+    181,
+    155,
+    25,
+    130,
+    160,
+    71,
+    3,
+    164,
+    47,
+    182,
+    169,
+    21,
+    220,
+    77,
+    8,
+    9,
+    43,
+    57,
+    52,
+    25,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    56,
+    34,
+    44,
+    34,
+    114,
+    101,
+    115,
+    117,
+    108,
+    116,
+    34,
+    58,
+    34,
+    83,
+    85,
+    67,
+    67,
+    69,
+    83,
+    83,
+    34,
+    44,
+    34,
+    101,
+    118,
+    101,
+    110,
+    116,
+    95,
+    97,
+    116,
+    34,
+    58,
+    34,
+    50,
+    48,
+    50,
+    54,
+    45,
+    49,
+    48,
+    45,
+    49,
+    48,
+    84,
+    49,
+    55,
+    58,
+    53,
+    57,
+    58,
+    52,
+    48,
+    90,
+    34,
+    125,
+    10,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ]
+}
+Result  : PASS
+
+[TEST 064]
+Purpose : Open the audit database through SQLCipher
+Expected: cipher_version() reports the active SQLCipher runtime
+Actual  : Audit SQLCipher runtime: 4.6.1 community
+Result  : PASS
+
+[TEST 065]
+Purpose : Store the JWT_ISSUED audit record and receipt atomically
+Expected: a nonempty audit_id identifies the stored database record
+Actual  : Audit record stored: audit_id=<redacted-secret>
+Result  : PASS
+
+[TEST 066]
+Purpose : Mark the persisted validated receipt as STORED
+Expected: the reloaded audit record has receipt_state STORED
+Actual  : Audit receipt state: STORED
+Result  : PASS
+
+[TEST 067]
+Purpose : Reload the complete receipt from the audit database
+Expected: service, file, before size, and after size match the write receipt
+Actual  : Audit receipt reloaded: service=autobricks-jwt file=truelog-2026-10-11.log before=1472 after=1656
+Result  : PASS
+
+[TEST 068]
+Purpose : Remove the temporary encrypted audit database
+Expected: the local test artifact is removed after verification
+Actual  : Audit test database cleanup: removed
+Result  : PASS
+
+Running ab-jwt-cli through the two management Unix sockets...
+
+[TEST 069]
+Purpose : Build and execute ab-jwt-cli
+Expected: the management client reports version 0.1.28
+Actual  : Autobricks JWT Management Client 0.1.28
+Result  : PASS
+
+[TEST 070]
+Purpose : Create separate broker-facing and server-management Unix sockets
+Expected: both sockets are type socket with mode 0660 under mode 0750 directories
+Actual  : client socket=0660/0750; server socket=0660/0750
+Result  : PASS
+
+[TEST 071]
+Purpose : Register a WRITE client through ab-jwt-cli and both management sockets
+Expected: SUCCESS returns a client_id and preserves WRITE, source CIDR, transports, timeout, UID, and GID
+Actual  : {"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"web-server-write","keep_alive_timeout":3600,"operation_class":"WRITE","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["UNIX","MTLS"]}
+Result  : PASS
+
+[TEST 072]
+Purpose : Register a separate READ client through ab-jwt-cli
+Expected: SUCCESS returns an independent READ client_id
+Actual  : {"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"policy-read","keep_alive_timeout":900,"operation_class":"READ","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["MTLS"]}
+Result  : PASS
+
+[TEST 073]
+Purpose : List registered clients through ab-jwt-cli
+Expected: the response contains the two active client registrations
+Actual  : [{"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"policy-read","keep_alive_timeout":900,"operation_class":"READ","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["MTLS"]},{"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"web-server-write","keep_alive_timeout":3600,"operation_class":"WRITE","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["UNIX","MTLS"]}]
+Result  : PASS
+
+[TEST 074]
+Purpose : Register a WRITE service and issue its APIKEY through ab-jwt-cli
+Expected: SUCCESS returns service_id and APIKEY with DATABASE and JWE_DIR_A256GCM bindings
+Actual  : service_id=<redacted-secret>; APIKEY issued; source=DATABASE; encryption=JWE_DIR_A256GCM
+Result  : PASS
+
+[TEST 075]
+Purpose : Register a READ service with its field allowlist through ab-jwt-cli
+Expected: SUCCESS returns service_id and preserves only user_id and role query fields
+Actual  : service_id=<redacted-secret>; allowed_jwt_query_fields=["user_id","role"]; APIKEY issued
+Result  : PASS
+
+[TEST 076]
+Purpose : Select a client and list only its registered services
+Expected: the WRITE client list contains exactly login-issuer
+Actual  : [{"allowed_jwt_query_fields":[],"client_id":"<redacted-secret>","client_json_schema":null,"database_source":null,"encryption_profile":"JWE_DIR_A256GCM","service_id":"<redacted-secret>","service_name":"login-issuer","source_type":"DATABASE","subject_type":"USER"}]
+Result  : PASS
+
+[TEST 077]
+Purpose : Delete the selected service through ab-jwt-cli
+Expected: the exact client_id and service_id return status DELETED
+Actual  : {"client_id":"<redacted-secret>","service_id":"<redacted-secret>","status":"DELETED"}
+Result  : PASS
+
+[TEST 078]
+Purpose : Verify service deletion through the selected client list
+Expected: the deleted WRITE service no longer appears
+Actual  : service count=0
+Result  : PASS
+
+[TEST 079]
+Purpose : Delete a client and cascade its registered service and APIKEY
+Expected: one READ service is deleted and one APIKEY is revoked
+Actual  : {"client_id":"<redacted-secret>","deleted_service_count":1,"revoked_apikey_count":1,"status":"DELETED"}
+Result  : PASS
+
+[TEST 080]
+Purpose : Complete management cleanup and stop both socket services
+Expected: the final client is deleted and both bounded request loops exit successfully
+Actual  : {"client_id":"<redacted-secret>","deleted_service_count":0,"revoked_apikey_count":0,"status":"DELETED"}; broker exit=0; server exit=0
+Result  : PASS
+
+[TEST 081]
+Purpose : Remove both management sockets and their test directories
+Expected: no local management socket test artifact remains
+Actual  : management socket cleanup completed
+Result  : PASS
+
+Running injected-time log Drain verification...
+
+[TEST 082]
+Purpose : Verify the 90-day Drain boundary with an injected clock
+Expected: records younger than 90 days remain; records at or beyond 90 days are removed; excluded classes remain
+Actual  : 3 boundary tests passed without waiting for wall-clock time
+Result  : PASS
+
+[TEST 083]
+Purpose : Delete an expired audit record from SQLCipher at the exact boundary
+Expected: the 90-day record is removed transactionally and the newer record remains
+Actual  : SQLCipher audit Drain boundary test passed
+Result  : PASS
+
+[TEST 084]
+Purpose : Persist client, service, and APIKEY authorization state in SQLCipher
+Expected: restart restores active authorization; deletion preserves DELETED history; a wrong database key is rejected
+Actual  : SQLCipher registration restart, authorization, logical deletion, and wrong-key checks passed
+Result  : PASS
+
+[TEST 085]
+Purpose : Persist token, key, IV, digest, and version state in SQLCipher
+Expected: restart restores and decrypts the token; tampering, duplicate request identity, and a wrong database key are rejected
+Actual  : 3 SQLCipher token persistence and security tests passed
+Result  : PASS
+
+[TEST 086]
+Purpose : Authorize and persist a CLIENT_JSON JWT_CREATE request
+Expected: WRITE authorization creates one token; the same request identity returns the original token; invalid boundaries are rejected
+Actual  : 6 issuance processing, schema, cache, audit, profile, idempotency, and authorization tests passed
+Result  : PASS
+
+[TEST 087]
+Purpose : Modify and transition a durable client registration
+Expected: editable connection settings survive restart; inactive state blocks client and service authorization; reactivation restores it without changing operation class
+Actual  : SQLCipher client modification and ACTIVE/INACTIVE lifecycle test passed
+Result  : PASS
+
+[TEST 088]
+Purpose : Process persistent frames under injected connection deadlines
+Expected: multiple requests reuse one connection; work refreshes idle time; oversize, idle, lifetime, certificate, and source boundaries are enforced
+Actual  : 6 framing, certificate-revalidation, and connection-policy tests passed without wall-clock waiting
+Result  : PASS
+
+[TEST 089]
+Purpose : Validate required backup installation settings
+Expected: an absolute directory is mandatory; interval defaults to 30 and accepts only 7 through 30 days
+Actual  : 7 server-configuration default, explicit, and rejection tests passed
+Result  : PASS
+
+[TEST 090]
+Purpose : Generate and verify a 256-bit recovery authorization key
+Expected: one-time output is 64 lowercase hex characters; only the SHA-256 verifier remains; malformed and incorrect values share one rejection
+Actual  : 3 recovery-key generation, isolation, and failure tests passed
+Result  : PASS
+
+[TEST 091]
+Purpose : Query, update, and revoke a durable JWT session
+Expected: READ returns only allowed fields; WRITE upsert creates a replacement version; required and optional token modes enforce integrity; revocation is final
+Actual  : 4 separated-permission, security, audit, and Cache lifecycle tests passed
+Result  : PASS
+
+[TEST 092]
+Purpose : Resolve installed transport and audit capabilities
+Expected: UNIX and TCP remain available without PKI; TLS and mTLS require PKI; TrueLog availability controls audit evidence capability
+Actual  : 2 dependency capability-matrix tests passed
+Result  : PASS
+
+[TEST 093]
+Purpose : Apply optional activity-log selection and the exact 90-day boundary
+Expected: disabled request logging creates no record; enabled query and issuance records persist; only the record at the exact boundary is removed
+Actual  : SQLCipher optional logging and exact retention-boundary test passed
+Result  : PASS
+
+[TEST 094]
+Purpose : Run SQLCipher log Drain on its injected schedule
+Expected: the scheduler does nothing before its deadline, drains due activity and audit repositories at the deadline, and schedules the next daily run
+Actual  : automatic SQLCipher Drain schedule test passed without wall-clock waiting
+Result  : PASS
+
+[TEST 095]
+Purpose : Map every error exposure class to its client boundary
+Expected: public remains specific, generic redacts detail, close emits no response, and internal maps to safe 8000
+Actual  : all assigned error exposure mappings passed
+Result  : PASS
+
+[TEST 096]
+Purpose : Write mandatory redacted operational syslog records
+Expected: every classified root code and accepted or rejected connection produces structured output without token, APIKEY, or unrestricted detail
+Actual  : 2 complete-registry and connection-access logging tests passed
+Result  : PASS
+
+[TEST 097]
+Purpose : Query the fixed Autobricks JWT system journal
+Expected: ab-jwt-cli invokes journalctl without a shell, fixes the service unit, limits output, and rejects option injection
+Actual  : 2 journal query and security-boundary tests passed
+Result  : PASS
+
+[TEST 098]
+Purpose : Cascade JWT client deletion into session state without erasing history
+Expected: WRITE deletion revokes its active sessions; READ deletion leaves other issuers intact; token versions and registration history remain after restart
+Actual  : 2 WRITE and READ deletion-boundary tests passed
+Result  : PASS
+
+[TEST 099]
+Purpose : Persist and authorize a service certificate binding
+Expected: fingerprint, service_id, client_id, operation class, and exact READ or WRITE URI SAN must resolve to one active SQLCipher record
+Actual  : certificate registration, mismatch, unregistered, and URI SAN tests passed
+Result  : PASS
+
+[TEST 100]
+Purpose : Validate the enrolled client certificate through Autobricks PKI
+Expected: the certificate is currently valid for client authentication, has one WRITE URI SAN, and its AIA responder returns a verified GOOD response
+Actual  : existing certificate inspection and live OCSP GOOD verification passed
+Result  : PASS
+
+[TEST 101]
+Purpose : Persist the complete TrueLog receipt-state workflow
+Expected: PENDING has no manufactured receipt, valid append completion becomes STORED, uncertain persistence becomes RECONCILE, and RECONCILE cannot be blindly completed
+Actual  : SQLCipher PENDING, STORED, RECONCILE, and local-filter tests passed
+Result  : PASS
+
+[TEST 102]
+Purpose : Dispatch the complete runtime operation protocol
+Expected: JWT_CREATE, JWT_STATUS, JWT_QUERY, and JWT_REVOKE use one listener handler and malformed JSON returns 8001
+Actual  : 2 operation-flow and malformed-request tests passed
+Result  : PASS
+
+[TEST 103]
+Purpose : Record production JWT issuance correlation
+Expected: one audit call contains the issuing service, subject type, request_id, token_id, and event time
+Actual  : production issuance audit integration test passed
+Result  : PASS
+
+[TEST 104]
+Purpose : Record the common invalid-session audit event
+Expected: a missing or expired session returns 8060 and records one indistinguishable event with the request correlation
+Actual  : common invalid-session audit integration test passed
+Result  : PASS
+
+[TEST 105]
+Purpose : Inspect one token through the root-only local Unix path
+Expected: the exact request_id and token_id resolve historical encrypted state, non-root and mismatched requests fail, and successful plaintext inspection emits an audit call
+Actual  : 3 authorization, correlation, decryption, audit, and Unix-socket tests passed
+Result  : PASS
+
+[TEST 106]
+Purpose : Query retained Audit records through the local management socket
+Expected: event, receipt state, time, service, result, and error filters return bounded SQLCipher records; invalid filters fail
+Actual  : 2 protected Unix query and filter-boundary tests passed
+Result  : PASS
+
+[TEST 107]
+Purpose : Issue, renew, and download service certificate packages
+Expected: abpki-cli receives the exact operation URI, validates generation fingerprints, and writes each archive to the invocation directory with a safe target
+Actual  : 3 issuance, renewal, download, and rejection tests passed
+Result  : PASS
+
+[TEST 108]
+Purpose : Activate a renewed service certificate with a single-use handover key
+Expected: the pending fingerprint cannot serve JWT requests; the exact unexpired proof atomically retires the old fingerprint and activates one replacement
+Actual  : 3 binding, successful handover, and failure-boundary tests passed
+Result  : PASS
+
+[TEST 109]
+Purpose : Run the server-certificate renewal schedule with injected time
+Expected: the scheduler polls once when due, skips repeated and missed slots, and restarts secure listeners only for a replacement package
+Actual  : 2 daily schedule and delayed-execution tests passed
+Result  : PASS
+
+[TEST 110]
+Purpose : Validate SSO and OAuth browser sessions with independent READ credentials
+Expected: each security domain receives only its minimum allowlisted identity fields, renews active Retention, and fails closed on cross-purpose field escalation
+Actual  : independent SSO and OAuth integration-boundary test passed
+Result  : PASS
+
+[TEST 111]
+Purpose : Register and execute the Autobricks Cache DATABASE source contract
+Expected: generated Connection and Cache identifiers, MAP, SELECT, binding order, optional UPDATE, TLS modes, durable service binding, and empty INSERT/DELETE rules are enforced
+Actual  : 4 configuration, persistence, lookup, update, and rejection tests passed
+Result  : PASS
+
+[TEST 112]
+Purpose : Issue and restore every registered JWE AES-GCM profile
+Expected: A128GCM, A192GCM, and A256GCM use profile-sized token-specific keys and unknown caller-selected algorithms are rejected
+Actual  : three-profile registration, persistence, authenticated decryption, and rejection test passed
+Result  : PASS
+
+[TEST 113]
+Purpose : Exercise all direct Database adapters
+Expected: PostgreSQL, MariaDB, MySQL, SQLite, and SQLCipher have independent native adapter boundaries
+Actual  : 4 adapter selection, connection, query, and update tests passed
+Result  : PASS
+
+[TEST 114]
+Purpose : Back up, rotate, and restore protected Database generations
+Expected: injected backup times create encrypted generations, HSM keeps CURRENT and PREVIOUS, and older restore follows the protected chain
+Actual  : 3 authorization, HSM helper, rotation, and restore tests passed
+Result  : PASS
+
+[TEST 115]
+Purpose : Render production server and broker services
+Expected: distinct non-root identities and executable server/broker command lines are required
+Actual  : 3 unit, identity, and path validation tests passed
+Result  : PASS
+
+[TEST 116]
+Purpose : Navigate the ncurses management interface
+Expected: arrow selection remains bounded and the executable UI exposes client and service pages
+Actual  : ncurses navigation state test passed
+Result  : PASS
+
+[TEST 117]
+Purpose : Trigger every classified error through its owner
+Expected: all 67 assigned errors have exactly one owning boundary and runtime admission conditions return exact codes
+Actual  : 67-code ownership and admission tests passed
+Result  : PASS
+
+Test summary
+Total : 117
+Passed: 117
+Failed: 0

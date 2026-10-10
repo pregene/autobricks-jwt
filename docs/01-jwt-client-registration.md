@@ -383,7 +383,7 @@ The accepted registration request uses the following structure.
 
 ```json
 {
-  "allowed_source_cidr": "10.10.254.0/24",
+  "allowed_source_cidr": "192.0.2.0/24",
   "client_name": "web-server-write",
   "keep_alive_timeout": 3600,
   "operation_class": "WRITE",
