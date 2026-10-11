@@ -64,6 +64,7 @@ pub(crate) mod tests {
         pub(crate) inserted: Vec<Uuid>,
         pub(crate) touched: Vec<Uuid>,
         pub(crate) removed: Vec<Uuid>,
+        pub(crate) fail_remove_count: usize,
     }
 
     impl SessionCache for MemorySessionCache {
@@ -83,6 +84,12 @@ pub(crate) mod tests {
         }
 
         fn remove(&mut self, token_id: Uuid) -> Result<(), ServiceError> {
+            if self.fail_remove_count > 0 {
+                self.fail_remove_count -= 1;
+                return Err(ServiceError::service_unavailable(
+                    "session cache removal failed",
+                ));
+            }
             self.removed.push(token_id);
             Ok(())
         }

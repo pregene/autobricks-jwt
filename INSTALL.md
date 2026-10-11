@@ -17,6 +17,41 @@ this management path. Network JWT service transports do not expose these
 operations. Neither management socket is world-accessible; filesystem
 permissions and Unix peer credentials restrict both connections.
 
+At server startup, `ab-jwtd` invokes the configured HSM helper to obtain the
+`CURRENT` SQLCipher Database key and opens the configured Database path with
+that key. The server restores active clients, services, APIKEY verifiers, and
+their authorization relationships before accepting management requests. An
+unavailable HSM key or an unreadable SQLCipher Database prevents startup.
+
+```yaml
+database_path: /var/lib/autobricks-jwt/autobricks-jwt.db
+hsm_helper: /usr/libexec/autobricks-jwt-hsm
+hsm_key_namespace: autobricks-jwt/database
+```
+
+The Database path and HSM helper path must be absolute. The key namespace must
+be nonempty. The SQLCipher Database key is never placed in the configuration,
+process arguments, output, or logs.
+
+Runtime listeners are selected explicitly. UNIX and TCP require no PKI
+configuration. TLS requires the server certificate and private key. Mutual TLS
+also requires the client trust chain.
+
+```yaml
+runtime_transports: UNIX,TCP,TLS,MTLS
+service_socket: /run/autobricks-jwt/service.sock
+tcp_address: 127.0.0.1:7001
+tls_address: 127.0.0.1:7002
+mtls_address: 127.0.0.1:7003
+server_certificate: /etc/autobricks-jwt/certificate.pem
+server_private_key: /etc/autobricks-jwt/private-key.pem
+client_trust_chain: /etc/autobricks-jwt/trust-chain
+```
+
+Only listed transports are bound. Duplicate or unknown transport names are
+rejected. Secure listeners do not start when their required certificate
+material is absent or invalid.
+
 When `ab-jwt-cli` provisions a client certificate, it downloads the certificate
 package into the directory from which `ab-jwt-cli` was invoked.
 

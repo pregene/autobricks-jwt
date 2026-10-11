@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use uuid::Uuid;
@@ -60,6 +60,11 @@ impl SqlCipherRegistrationRepository {
                     status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'DELETED')),
                     created_at INTEGER NOT NULL,
                     modified_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS read_service_issuers (
+                    read_service_id TEXT NOT NULL REFERENCES services(service_id),
+                    issuer_service_id TEXT NOT NULL REFERENCES services(service_id),
+                    PRIMARY KEY (read_service_id, issuer_service_id)
                  );",
             )
             .map_err(database_operation_failed)?;
@@ -105,7 +110,11 @@ impl SqlCipherRegistrationRepository {
         let fields = serde_json::to_string(&service.allowed_jwt_query_fields)
             .map_err(|_| database_operation_failed_message("service fields are invalid"))?;
         let now = to_i64(now)?;
-        self.connection
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(database_operation_failed)?;
+        transaction
             .execute(
                 "INSERT INTO services (
                     service_id, client_id, service_name, apikey_salt,
@@ -143,6 +152,19 @@ impl SqlCipherRegistrationRepository {
                 ],
             )
             .map_err(database_operation_failed)?;
+        for issuer_service_id in &service.allowed_issuer_service_ids {
+            transaction
+                .execute(
+                    "INSERT INTO read_service_issuers (read_service_id, issuer_service_id)
+                     VALUES (?1, ?2)",
+                    params![
+                        service.service_id.to_string(),
+                        issuer_service_id.to_string()
+                    ],
+                )
+                .map_err(database_operation_failed)?;
+        }
+        transaction.commit().map_err(database_operation_failed)?;
         Ok(())
     }
 
@@ -251,6 +273,8 @@ impl SqlCipherRegistrationRepository {
                 subject_type: subject,
                 allowed_jwt_query_fields: serde_json::from_str(&fields)
                     .map_err(|_| database_operation_failed_message("service fields are invalid"))?,
+                allowed_issuer_service_ids: self
+                    .load_allowed_issuers(parse_uuid(&service_id, "service")?)?,
                 source_type: source,
                 encryption_profile: profile,
                 client_json_schema: schema
@@ -266,6 +290,23 @@ impl SqlCipherRegistrationRepository {
             })
         })
         .collect()
+    }
+
+    fn load_allowed_issuers(&self, read_service_id: Uuid) -> Result<BTreeSet<Uuid>, ServiceError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT issuer_service_id FROM read_service_issuers
+                 WHERE read_service_id = ?1 ORDER BY issuer_service_id",
+            )
+            .map_err(database_operation_failed)?;
+        let rows = statement
+            .query_map(params![read_service_id.to_string()], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(database_operation_failed)?;
+        rows.map(|row| parse_uuid(&row.map_err(database_operation_failed)?, "issuer service"))
+            .collect()
     }
 
     pub fn set_database_source(

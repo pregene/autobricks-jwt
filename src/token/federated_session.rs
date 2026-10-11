@@ -138,26 +138,28 @@ mod tests {
             .register_client("sso-reader", OperationClass::Read)
             .unwrap();
         let sso = registry
-            .register_service_with_configuration(
+            .register_service_with_issuers(
                 sso_id,
                 "sso-session",
                 "USER",
                 vec!["user_id".into(), "authentication_level".into()],
                 None,
                 None,
+                vec![writer.service_id],
             )
             .unwrap();
         let oauth_id = registry
             .register_client("oauth-reader", OperationClass::Read)
             .unwrap();
         let oauth = registry
-            .register_service_with_configuration(
+            .register_service_with_issuers(
                 oauth_id,
                 "oauth-session",
                 "USER",
                 vec!["user_id".into(), "consent_state".into()],
                 None,
                 None,
+                vec![writer.service_id],
             )
             .unwrap();
         let issued = IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300))

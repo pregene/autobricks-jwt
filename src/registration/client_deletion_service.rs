@@ -108,7 +108,17 @@ mod tests {
         let read_id = registry
             .register_client("delete-read", OperationClass::Read)
             .unwrap();
-        registry.register_service(read_id, "delete-reader").unwrap();
+        registry
+            .register_service_with_issuers(
+                read_id,
+                "delete-reader",
+                "USER",
+                vec!["user_id".into()],
+                None,
+                None,
+                vec![write.service_id],
+            )
+            .unwrap();
         let mut tokens = SqlCipherTokenRepository::open(&token_path, &[0xd1; 32]).unwrap();
         let issued = IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300))
             .unwrap()

@@ -83,6 +83,13 @@ The state transition is fail-closed. Once the durable session is marked
 `REVOKED`, the token cannot become active again through Cache reload, Database
 history, restart, or Retention behavior.
 
+The durable revocation transaction also creates a Cache-cleanup queue record.
+The queue record is removed only after Cache confirms removal. If Cache removal
+fails, the request fails without reverting the durable revocation, and the
+cleanup operation remains available for idempotent reconciliation. All query
+paths check durable active state before returning status or fields, so a stale
+Cache entry cannot authorize the revoked session while cleanup is pending.
+
 ## Response
 
 ```json
@@ -120,6 +127,9 @@ Only one concurrent revocation can transition an active session to `REVOKED`.
 Queries or updates cannot succeed after that transition. A later revocation
 request finds no active session and receives `SESSION_NOT_FOUND_OR_EXPIRED`;
 it does not create another state transition.
+
+Cache-cleanup reconciliation is independently idempotent. It retries only
+pending Cache removals and deletes the queue record after successful removal.
 
 The client-generated `request_id` prevents an ambiguous retry from being
 treated as a new unrelated request. It does not reactivate or recreate the

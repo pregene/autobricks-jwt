@@ -156,16 +156,18 @@ Autobricks JWT processes a query in this order:
    bound to the session.
 5. Resolve the selected token, token-specific key, IV, encryption profile, and
    issuance relationship from the internal Cache and SQLCipher records.
-6. Validate the JWE Compact structure, protected header, `kid`, algorithms,
+6. Require the token's issuing WRITE `service_id` to appear in the authorized
+   READ service's SQLCipher issuer allowlist.
+7. Validate the JWE Compact structure, protected header, `kid`, algorithms,
    key size, stored IV, authentication tag, and ciphertext integrity.
-7. Decrypt and parse the complete payload only inside `ab-jwtd`.
-8. Validate `iss`, `sub`, `aud`, `iat`, `nbf`, `exp`, `jti`, `subject_type`,
+8. Decrypt and parse the complete payload only inside `ab-jwtd`.
+9. Validate `iss`, `sub`, `aud`, `iat`, `nbf`, `exp`, `jti`, `subject_type`,
    token/service bindings, and active session state.
-9. For a status request, return only `ACTIVE` without returning a claim.
-10. For a field query, validate the complete requested field list against the
+10. For a status request, return only `ACTIVE` without returning a claim.
+11. For a field query, validate the complete requested field list against the
     READ service allowlist, project only those values, and extend the active
     session's sliding Cache Retention.
-11. Return the response without exposing the complete decrypted payload.
+12. Return the response without exposing the complete decrypted payload.
 
 `token_id` accelerates lookup and selects the stored token in token-optional
 mode, but it never replaces internal validation of that complete encrypted

@@ -88,6 +88,8 @@ impl<'a> SessionService<'a> {
         if record.token.subject_type()? != service.subject_type {
             return Err(classified(8042, "subject type is not authorized"));
         }
+        self.registry
+            .authorize_issuer(service.service_id, record.service_id)?;
         let selected = select_token(
             request.token.as_deref(),
             &record.token.token,
@@ -228,8 +230,47 @@ impl<'a> SessionService<'a> {
         cache: &mut C,
     ) -> Result<(), ServiceError> {
         let token_id = request.token_id;
-        self.revoke(request, now)?;
-        cache.remove(token_id)
+        let service = self.registry.authorize_service_by_apikey(
+            request.client_id,
+            &request.apikey,
+            OperationClass::Write,
+        )?;
+        let record = self.active_record(token_id)?;
+        require_issuing_service(&record, request.client_id, service.service_id)?;
+        let selected = select_token(
+            request.token.as_deref(),
+            &record.token.token,
+            self.require_complete_token,
+        )?;
+        record
+            .token
+            .verify_and_query(selected, &record.service_id.to_string(), now, &[])?;
+        self.tokens
+            .revoke_active_with_cache_cleanup(token_id, now)?;
+        self.remove_pending_cache_record(token_id, cache)
+    }
+
+    pub fn reconcile_cache_removals<C: SessionCache>(
+        &mut self,
+        cache: &mut C,
+    ) -> Result<usize, ServiceError> {
+        let pending = self.tokens.pending_cache_cleanup()?;
+        let mut completed = 0;
+        for token_id in pending {
+            self.remove_pending_cache_record(token_id, cache)?;
+            completed += 1;
+        }
+        Ok(completed)
+    }
+
+    fn remove_pending_cache_record<C: SessionCache>(
+        &mut self,
+        token_id: Uuid,
+        cache: &mut C,
+    ) -> Result<(), ServiceError> {
+        self.tokens.record_cache_cleanup_attempt(token_id)?;
+        cache.remove(token_id)?;
+        self.tokens.complete_cache_cleanup(token_id)
     }
 
     fn active_record(&self, token_id: Uuid) -> Result<ActiveTokenRecord, ServiceError> {
@@ -352,7 +393,7 @@ mod tests {
             .register_client("read", OperationClass::Read)
             .unwrap();
         let read = registry
-            .register_service_with_configuration(
+            .register_service_with_issuers(
                 read_client,
                 "reader",
                 "USER",
@@ -363,6 +404,7 @@ mod tests {
                 ],
                 None,
                 None,
+                vec![write.service_id],
             )
             .unwrap();
         let create_request = JwtCreateRequest {
@@ -497,13 +539,14 @@ mod tests {
             .register_client("read-optional", OperationClass::Read)
             .unwrap();
         let read = registry
-            .register_service_with_configuration(
+            .register_service_with_issuers(
                 read_client,
                 "reader-optional",
                 "USER",
                 vec!["user_id".into()],
                 None,
                 None,
+                vec![write.service_id],
             )
             .unwrap();
         let issued = IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300))
@@ -577,21 +620,122 @@ mod tests {
     }
 
     #[test]
+    fn rejects_tokens_from_unbound_issuer_in_both_submission_modes() {
+        let path = std::env::temp_dir().join(format!("ab-jwt-issuer-scope-{}.db", Uuid::new_v4()));
+        let mut tokens = SqlCipherTokenRepository::open(&path, &[0x94; 32]).unwrap();
+        let mut registry = ServiceRegistry::default();
+        let writer_id = registry
+            .register_client("scope-writer", OperationClass::Write)
+            .unwrap();
+        let allowed_writer = registry
+            .register_service(writer_id, "scope-allowed")
+            .unwrap();
+        let denied_writer = registry
+            .register_service(writer_id, "scope-denied")
+            .unwrap();
+        let reader_id = registry
+            .register_client("scope-reader", OperationClass::Read)
+            .unwrap();
+        let reader = registry
+            .register_service_with_issuers(
+                reader_id,
+                "scope-query",
+                "USER",
+                vec!["user_id".into()],
+                None,
+                None,
+                vec![allowed_writer.service_id],
+            )
+            .unwrap();
+        let issue = |apikey: String, request_id| JwtCreateRequest {
+            client_id: writer_id,
+            apikey,
+            request_id,
+            data: Map::from_iter([("user_id".into(), Value::String("scope-user".into()))]),
+        };
+        let allowed = IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300))
+            .unwrap()
+            .create(issue(allowed_writer.apikey, Uuid::new_v4()), 3_000)
+            .unwrap();
+        let denied = IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300))
+            .unwrap()
+            .create(issue(denied_writer.apikey, Uuid::new_v4()), 3_000)
+            .unwrap();
+
+        SessionService::new(&registry, &mut tokens, true)
+            .query(
+                JwtQueryRequest {
+                    client_id: reader_id,
+                    apikey: reader.apikey.clone(),
+                    request_id: Uuid::new_v4(),
+                    token_id: allowed.token_id,
+                    token: Some(allowed.token),
+                    fields: Some(vec!["user_id".into()]),
+                },
+                3_010,
+            )
+            .unwrap();
+        assert_eq!(
+            SessionService::new(&registry, &mut tokens, true)
+                .query(
+                    JwtQueryRequest {
+                        client_id: reader_id,
+                        apikey: reader.apikey.clone(),
+                        request_id: Uuid::new_v4(),
+                        token_id: denied.token_id,
+                        token: Some(denied.token.clone()),
+                        fields: None,
+                    },
+                    3_010,
+                )
+                .unwrap_err()
+                .code(),
+            8031
+        );
+        assert_eq!(
+            SessionService::new(&registry, &mut tokens, false)
+                .query(
+                    JwtQueryRequest {
+                        client_id: reader_id,
+                        apikey: reader.apikey,
+                        request_id: Uuid::new_v4(),
+                        token_id: denied.token_id,
+                        token: None,
+                        fields: None,
+                    },
+                    3_010,
+                )
+                .unwrap_err()
+                .code(),
+            8031
+        );
+        drop(tokens);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn missing_or_expired_session_records_common_audit_event() {
         let path = std::env::temp_dir().join(format!("ab-jwt-invalid-audit-{}.db", Uuid::new_v4()));
         let mut tokens = SqlCipherTokenRepository::open(&path, &[0x92; 32]).unwrap();
         let mut registry = ServiceRegistry::default();
+        let writer_id = registry
+            .register_client("audited-writer", OperationClass::Write)
+            .unwrap();
+        let writer = registry
+            .register_service(writer_id, "audited-issuer")
+            .unwrap();
         let client_id = registry
             .register_client("audited-reader", OperationClass::Read)
             .unwrap();
         let credential = registry
-            .register_service_with_configuration(
+            .register_service_with_issuers(
                 client_id,
                 "audited-query",
                 "USER",
                 vec!["user_id".into()],
                 None,
                 None,
+                vec![writer.service_id],
             )
             .unwrap();
         let request_id = Uuid::new_v4();
@@ -634,13 +778,14 @@ mod tests {
             .register_client("cache-reader", OperationClass::Read)
             .unwrap();
         let reader = registry
-            .register_service_with_configuration(
+            .register_service_with_issuers(
                 reader_id,
                 "cache-query",
                 "USER",
                 vec!["user_id".into()],
                 None,
                 None,
+                vec![writer.service_id],
             )
             .unwrap();
         let issued = IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300))
@@ -690,6 +835,98 @@ mod tests {
         assert_eq!(cache.touched, vec![issued.token_id]);
         assert_eq!(cache.removed, vec![issued.token_id]);
         drop(sessions);
+        assert!(tokens.pending_cache_cleanup().unwrap().is_empty());
+        drop(tokens);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    #[allow(clippy::drop_non_drop)]
+    fn durable_revocation_denies_stale_cache_and_reconciles_failed_removal() {
+        let path =
+            std::env::temp_dir().join(format!("ab-jwt-cache-reconcile-{}.db", Uuid::new_v4()));
+        let mut tokens = SqlCipherTokenRepository::open(&path, &[0x95; 32]).unwrap();
+        let mut registry = ServiceRegistry::default();
+        let writer_id = registry
+            .register_client("reconcile-writer", OperationClass::Write)
+            .unwrap();
+        let writer = registry
+            .register_service(writer_id, "reconcile-issuer")
+            .unwrap();
+        let reader_id = registry
+            .register_client("reconcile-reader", OperationClass::Read)
+            .unwrap();
+        let reader = registry
+            .register_service_with_issuers(
+                reader_id,
+                "reconcile-query",
+                "USER",
+                vec!["user_id".into()],
+                None,
+                None,
+                vec![writer.service_id],
+            )
+            .unwrap();
+        let issued = IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300))
+            .unwrap()
+            .create(
+                JwtCreateRequest {
+                    client_id: writer_id,
+                    apikey: writer.apikey.clone(),
+                    request_id: Uuid::new_v4(),
+                    data: Map::from_iter([(
+                        "user_id".into(),
+                        Value::String("reconcile-user".into()),
+                    )]),
+                },
+                4_000,
+            )
+            .unwrap();
+        let mut cache = MemorySessionCache {
+            fail_remove_count: 1,
+            ..Default::default()
+        };
+        let mut sessions = SessionService::new(&registry, &mut tokens, false);
+        assert_eq!(
+            sessions
+                .revoke_cached(
+                    JwtRevokeRequest {
+                        client_id: writer_id,
+                        apikey: writer.apikey,
+                        request_id: Uuid::new_v4(),
+                        token_id: issued.token_id,
+                        token: None,
+                    },
+                    4_010,
+                    &mut cache,
+                )
+                .unwrap_err()
+                .code(),
+            8009
+        );
+        assert_eq!(
+            sessions
+                .query_cached(
+                    JwtQueryRequest {
+                        client_id: reader_id,
+                        apikey: reader.apikey,
+                        request_id: Uuid::new_v4(),
+                        token_id: issued.token_id,
+                        token: None,
+                        fields: Some(vec!["user_id".into()]),
+                    },
+                    4_020,
+                    &mut cache,
+                )
+                .unwrap_err()
+                .code(),
+            8060
+        );
+        assert!(cache.touched.is_empty());
+        assert_eq!(sessions.reconcile_cache_removals(&mut cache).unwrap(), 1);
+        assert_eq!(cache.removed, [issued.token_id]);
+        drop(sessions);
+        assert!(tokens.pending_cache_cleanup().unwrap().is_empty());
         drop(tokens);
         fs::remove_file(path).unwrap();
     }

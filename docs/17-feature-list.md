@@ -129,11 +129,11 @@ workflow, packaging, and end-to-end restart behavior are tracked separately.
 | FTL-116 | `DONE` | Previous SQLCipher backup restoration | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery) |
 | FTL-117 | `DONE` | Optional request, query, issuance, and audit logging | [Installation](../INSTALL.md#logging-selection) |
 | FTL-118 | `DONE` | Automatic 90-day internal log drain | [Log Drain Cycle](13-log-drain-cycle.md#internal-record-retention) |
-| FTL-119 | `PLAN` | Production runtime composition and shared service context | [Architecture](../ARCHITECTURE.md#service-interface) |
-| FTL-120 | `PLAN` | HSM-backed SQLCipher key acquisition during server startup | [Architecture](../ARCHITECTURE.md#key-store) |
-| FTL-121 | `PLAN` | Production management registry opened from durable SQLCipher state | [Service Registration](02-service-registration.md#security-boundary) |
-| FTL-122 | `PLAN` | Configuration-driven UNIX, TCP, TLS, and mTLS listener startup | [Architecture](../ARCHITECTURE.md#service-interface) |
-| FTL-123 | `PLAN` | Listener-to-runtime-dispatcher request and response integration | [Operation Definitions](10-operation-definitions.md) |
+| FTL-119 | `DONE` | Production runtime composition and shared service context | [Architecture](../ARCHITECTURE.md#service-interface) |
+| FTL-120 | `DONE` | HSM-backed SQLCipher key acquisition during server startup | [Architecture](../ARCHITECTURE.md#key-store) |
+| FTL-121 | `DONE` | Production management registry opened from durable SQLCipher state | [Service Registration](02-service-registration.md#security-boundary) |
+| FTL-122 | `DONE` | Configuration-driven UNIX, TCP, TLS, and mTLS listener startup | [Architecture](../ARCHITECTURE.md#service-interface) |
+| FTL-123 | `DONE` | Listener-to-runtime-dispatcher request and response integration | [Operation Definitions](10-operation-definitions.md) |
 | FTL-124 | `PLAN` | Production Autobricks Cache initialization and shutdown lifecycle | [Dependencies](../DEPENDENCIES.md#required-dependency-autobricks-cache) |
 | FTL-125 | `PLAN` | Registered DATABASE source execution in the production issuance path | [Service Registration](02-service-registration.md#database-source) |
 | FTL-126 | `PLAN` | Parameterized SELECT and UPDATE execution for every direct database adapter | [Supported Databases](../SUPPORT-DATABASE.md) |
@@ -157,13 +157,13 @@ workflow, packaging, and end-to-end restart behavior are tracked separately.
 | FTL-144 | `PLAN` | Failed-recovery rollback that leaves the original active database and HSM slots usable | [Recovery](14-recovery.md#verification-failure) |
 | FTL-145 | `PLAN` | Post-recovery registration reload, Cache rebuild, scheduler restoration, and listener restart | [Data Backup](11-data-backup.md#restoration-boundary) |
 | FTL-146 | `PLAN` | Recovery operational logging, classified failure reporting, and successful recovery audit evidence | [Recovery](14-recovery.md) |
-| FTL-147 | `PLAN` | READ-service registration of the exact WRITE services whose tokens it may access | [Service Registration](02-service-registration.md#security-boundary) |
-| FTL-148 | `PLAN` | Durable SQLCipher storage and management validation of READ-to-WRITE service bindings | [Service Registration](02-service-registration.md#security-boundary) |
-| FTL-149 | `PLAN` | Issuing-service authorization before status lookup, token decryption, field projection, or Retention extension | [JWT Query](04-service-json-web-token-query.md#authorized-field-query) |
-| FTL-150 | `PLAN` | Cross-service query isolation tests for allowed and rejected issuers in complete-token and token-optional modes | [JWT Query](04-service-json-web-token-query.md#security-boundaries) |
+| FTL-147 | `DONE` | READ-service registration of the exact WRITE services whose tokens it may access | [Service Registration](02-service-registration.md#security-boundary) |
+| FTL-148 | `DONE` | Durable SQLCipher storage and management validation of READ-to-WRITE service bindings | [Service Registration](02-service-registration.md#security-boundary) |
+| FTL-149 | `DONE` | Issuing-service authorization before status lookup, token decryption, field projection, or Retention extension | [JWT Query](04-service-json-web-token-query.md#authorized-field-query) |
+| FTL-150 | `DONE` | Cross-service query isolation tests for allowed and rejected issuers in complete-token and token-optional modes | [JWT Query](04-service-json-web-token-query.md#security-boundaries) |
 | FTL-151 | `PLAN` | Authoritative durable session-state validation on every production Cache-backed query path | [Architecture](../ARCHITECTURE.md#cache-adapter) |
-| FTL-152 | `PLAN` | Idempotent Cache-removal retry and reconciliation after durable JWT revocation | [JWT Revocation](05-service-json-web-token-revocation.md#concurrency-and-idempotency) |
-| FTL-153 | `PLAN` | Stale-Cache denial tests proving that a durably revoked or missing session cannot become active | [JWT Revocation](05-service-json-web-token-revocation.md#processing) |
+| FTL-152 | `DONE` | Idempotent Cache-removal retry and reconciliation after durable JWT revocation | [JWT Revocation](05-service-json-web-token-revocation.md#concurrency-and-idempotency) |
+| FTL-153 | `DONE` | Stale-Cache denial tests proving that a durably revoked or missing session cannot become active | [JWT Revocation](05-service-json-web-token-revocation.md#processing) |
 | FTL-154 | `PLAN` | Post-restoration invalidation of restored active sessions before service listeners reopen | [Data Backup](11-data-backup.md#restoration-boundary) |
 | FTL-155 | `PLAN` | Post-restoration Cache rebuild that excludes invalidated, revoked, expired, and incomplete session records | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery-procedure) |
 | FTL-156 | `PLAN` | End-to-end recovery tests proving that sessions revoked or issued after the selected restoration point cannot be reactivated | [Recovery](14-recovery.md) |

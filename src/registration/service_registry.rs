@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     num::NonZeroU32,
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
@@ -57,6 +57,7 @@ pub struct ServiceCredential {
     pub apikey: String,
     pub subject_type: String,
     pub allowed_jwt_query_fields: Vec<String>,
+    pub allowed_issuer_service_ids: Vec<Uuid>,
     pub source_type: Option<String>,
     pub encryption_profile: Option<String>,
 }
@@ -68,6 +69,7 @@ pub struct ServiceSummary {
     pub service_name: String,
     pub subject_type: String,
     pub allowed_jwt_query_fields: Vec<String>,
+    pub allowed_issuer_service_ids: Vec<Uuid>,
     pub source_type: Option<String>,
     pub encryption_profile: Option<String>,
     pub client_json_schema: Option<Vec<ClientJsonField>>,
@@ -105,6 +107,7 @@ pub(crate) struct StoredServiceRegistration {
     pub(crate) apikey_verifier: [u8; APIKEY_VERIFIER_LENGTH],
     pub(crate) subject_type: String,
     pub(crate) allowed_jwt_query_fields: Vec<String>,
+    pub(crate) allowed_issuer_service_ids: BTreeSet<Uuid>,
     pub(crate) source_type: Option<String>,
     pub(crate) encryption_profile: Option<String>,
     pub(crate) client_json_schema: Option<Vec<ClientJsonField>>,
@@ -249,6 +252,28 @@ impl ServiceRegistry {
         source_type: Option<String>,
         encryption_profile: Option<String>,
     ) -> Result<ServiceCredential, ServiceError> {
+        self.register_service_with_issuers(
+            client_id,
+            service_name,
+            subject_type,
+            allowed_jwt_query_fields,
+            source_type,
+            encryption_profile,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn register_service_with_issuers(
+        &mut self,
+        client_id: Uuid,
+        service_name: &str,
+        subject_type: &str,
+        allowed_jwt_query_fields: Vec<String>,
+        source_type: Option<String>,
+        encryption_profile: Option<String>,
+        allowed_issuer_service_ids: Vec<Uuid>,
+    ) -> Result<ServiceCredential, ServiceError> {
         let client_json_schema = (source_type.as_deref() == Some("CLIENT_JSON")).then(|| {
             let subject_field = match subject_type {
                 "DEVICE" => "device_id",
@@ -261,7 +286,7 @@ impl ServiceRegistry {
                 required: true,
             }]
         });
-        self.register_service_with_source_schema(
+        self.register_service_with_source_schema_and_issuers(
             client_id,
             service_name,
             subject_type,
@@ -269,6 +294,7 @@ impl ServiceRegistry {
             source_type,
             encryption_profile,
             client_json_schema,
+            allowed_issuer_service_ids,
         )
     }
 
@@ -283,6 +309,30 @@ impl ServiceRegistry {
         encryption_profile: Option<String>,
         client_json_schema: Option<Vec<ClientJsonField>>,
     ) -> Result<ServiceCredential, ServiceError> {
+        self.register_service_with_source_schema_and_issuers(
+            client_id,
+            service_name,
+            subject_type,
+            allowed_jwt_query_fields,
+            source_type,
+            encryption_profile,
+            client_json_schema,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn register_service_with_source_schema_and_issuers(
+        &mut self,
+        client_id: Uuid,
+        service_name: &str,
+        subject_type: &str,
+        allowed_jwt_query_fields: Vec<String>,
+        source_type: Option<String>,
+        encryption_profile: Option<String>,
+        client_json_schema: Option<Vec<ClientJsonField>>,
+        allowed_issuer_service_ids: Vec<Uuid>,
+    ) -> Result<ServiceCredential, ServiceError> {
         let client = self
             .clients
             .get(&client_id)
@@ -291,9 +341,11 @@ impl ServiceRegistry {
             return Err(ServiceError::invalid_request("subject type is invalid"));
         }
         match client.operation_class {
-            OperationClass::Read if allowed_jwt_query_fields.is_empty() => {
+            OperationClass::Read
+                if allowed_jwt_query_fields.is_empty() || allowed_issuer_service_ids.is_empty() =>
+            {
                 return Err(ServiceError::invalid_request(
-                    "READ service requires allowed JWT query fields",
+                    "READ service requires query fields and allowed issuer services",
                 ));
             }
             OperationClass::Write if source_type.is_none() || encryption_profile.is_none() => {
@@ -302,6 +354,34 @@ impl ServiceRegistry {
                 ));
             }
             _ => {}
+        }
+        let allowed_issuer_service_ids = allowed_issuer_service_ids
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        if client.operation_class == OperationClass::Write && !allowed_issuer_service_ids.is_empty()
+        {
+            return Err(ServiceError::invalid_request(
+                "WRITE service cannot declare issuer access",
+            ));
+        }
+        if client.operation_class == OperationClass::Read {
+            for issuer_id in &allowed_issuer_service_ids {
+                let issuer = self.services.get(issuer_id).ok_or_else(|| {
+                    ServiceError::service_not_registered("issuer service is not available")
+                })?;
+                let issuer_client = self.clients.get(&issuer.client_id).ok_or_else(|| {
+                    ServiceError::client_registration_inactive(
+                        "issuer client registration is not active",
+                    )
+                })?;
+                if issuer_client.operation_class != OperationClass::Write
+                    || issuer.subject_type != subject_type
+                {
+                    return Err(ServiceError::invalid_request(
+                        "issuer service is not compatible with the READ service",
+                    ));
+                }
+            }
         }
         if client.operation_class == OperationClass::Write
             && !matches!(
@@ -357,6 +437,7 @@ impl ServiceRegistry {
             apikey_verifier,
             subject_type: subject_type.to_owned(),
             allowed_jwt_query_fields: allowed_jwt_query_fields.clone(),
+            allowed_issuer_service_ids: allowed_issuer_service_ids.clone(),
             source_type: source_type.clone(),
             encryption_profile: encryption_profile.clone(),
             client_json_schema: client_json_schema.clone(),
@@ -374,6 +455,7 @@ impl ServiceRegistry {
             apikey,
             subject_type: subject_type.to_owned(),
             allowed_jwt_query_fields,
+            allowed_issuer_service_ids: allowed_issuer_service_ids.into_iter().collect(),
             source_type,
             encryption_profile,
         })
@@ -487,6 +569,11 @@ impl ServiceRegistry {
                 service_name: service.service_name.clone(),
                 subject_type: service.subject_type.clone(),
                 allowed_jwt_query_fields: service.allowed_jwt_query_fields.clone(),
+                allowed_issuer_service_ids: service
+                    .allowed_issuer_service_ids
+                    .iter()
+                    .copied()
+                    .collect(),
                 source_type: service.source_type.clone(),
                 encryption_profile: service.encryption_profile.clone(),
                 client_json_schema: service.client_json_schema.clone(),
@@ -560,6 +647,11 @@ impl ServiceRegistry {
                     service_name: service.service_name.clone(),
                     subject_type: service.subject_type.clone(),
                     allowed_jwt_query_fields: service.allowed_jwt_query_fields.clone(),
+                    allowed_issuer_service_ids: service
+                        .allowed_issuer_service_ids
+                        .iter()
+                        .copied()
+                        .collect(),
                     source_type: service.source_type.clone(),
                     encryption_profile: service.encryption_profile.clone(),
                     client_json_schema: service.client_json_schema.clone(),
@@ -578,6 +670,27 @@ impl ServiceRegistry {
             .values()
             .filter(|service| service.client_id == client_id)
             .count()
+    }
+
+    pub fn authorize_issuer(
+        &self,
+        read_service_id: Uuid,
+        issuer_service_id: Uuid,
+    ) -> Result<(), ServiceError> {
+        let reader = self.services.get(&read_service_id).ok_or_else(|| {
+            ServiceError::service_not_registered("READ service registration is not available")
+        })?;
+        if reader
+            .allowed_issuer_service_ids
+            .contains(&issuer_service_id)
+        {
+            Ok(())
+        } else {
+            Err(
+                ServiceError::classified(8031, "READ service does not permit the token issuer")
+                    .expect("8031 must be assigned"),
+            )
+        }
     }
 
     pub fn delete_service(
@@ -846,6 +959,67 @@ mod tests {
         assert_eq!(client.allowed_source_cidr, "192.0.2.0/24");
         assert_eq!(client.transports, ["UNIX", "MTLS"]);
         assert_eq!(client.keep_alive_timeout, 900);
+        drop(reopened);
+        fs::remove_file(database_path).unwrap();
+    }
+
+    #[test]
+    fn persists_exact_read_to_write_service_bindings() {
+        let database_path = std::env::temp_dir().join(format!(
+            "autobricks-jwt-issuer-binding-{}-{}.db",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let key = [0x48; 32];
+        let (read_client_id, read_service_id, allowed_issuer_id, denied_issuer_id) = {
+            let mut registry = ServiceRegistry::open_sqlcipher(&database_path, &key).unwrap();
+            let write_client_id = registry
+                .register_client("binding-writer", OperationClass::Write)
+                .unwrap();
+            let allowed = registry
+                .register_service(write_client_id, "binding-allowed")
+                .unwrap();
+            let denied = registry
+                .register_service(write_client_id, "binding-denied")
+                .unwrap();
+            let read_client_id = registry
+                .register_client("binding-reader", OperationClass::Read)
+                .unwrap();
+            let reader = registry
+                .register_service_with_issuers(
+                    read_client_id,
+                    "binding-query",
+                    "USER",
+                    vec!["user_id".into()],
+                    None,
+                    None,
+                    vec![allowed.service_id],
+                )
+                .unwrap();
+            (
+                read_client_id,
+                reader.service_id,
+                allowed.service_id,
+                denied.service_id,
+            )
+        };
+
+        let reopened = ServiceRegistry::open_sqlcipher(&database_path, &key).unwrap();
+        let reader = reopened.services(read_client_id).remove(0);
+        assert_eq!(reader.allowed_issuer_service_ids, [allowed_issuer_id]);
+        reopened
+            .authorize_issuer(read_service_id, allowed_issuer_id)
+            .unwrap();
+        assert_eq!(
+            reopened
+                .authorize_issuer(read_service_id, denied_issuer_id)
+                .unwrap_err()
+                .code(),
+            8031
+        );
         drop(reopened);
         fs::remove_file(database_path).unwrap();
     }

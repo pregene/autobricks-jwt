@@ -478,7 +478,15 @@ mod tests {
             .register_client("read", OperationClass::Read)
             .unwrap();
         let read = registry
-            .register_service(read_client, "read-service")
+            .register_service_with_issuers(
+                read_client,
+                "read-service",
+                "USER",
+                vec!["user_id".into()],
+                None,
+                None,
+                vec![write.service_id],
+            )
             .unwrap();
         let database_client = registry
             .register_client("database", OperationClass::Write)

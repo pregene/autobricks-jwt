@@ -383,6 +383,23 @@ The allowed JWT fields are entered as a comma-separated list. For example,
 A successful READ registration returns one `apikey` bound to the service, READ
 `client_id`, subject type, and field authorization.
 
+The registration input identifies both the field scope and the exact token
+issuers:
+
+```json
+{
+  "client_id": "<read-client-uuid>",
+  "service_name": "session-query",
+  "subject_type": "USER",
+  "allowed_jwt_query_fields": ["user_id", "role"],
+  "allowed_issuer_service_ids": ["<write-service-uuid>"]
+}
+```
+
+At least one issuer service is required. Registering multiple issuer IDs is
+allowed only when the READ service is intentionally authorized across those
+WRITE service boundaries.
+
 ### Field-Level Query Authorization
 
 A READ `client_id` does not receive permission to query every field stored in a
@@ -397,6 +414,7 @@ Every field-query request must satisfy all of the following conditions:
 - The APIKEY is active and bound to the same service and `client_id`.
 - The requested subject type is authorized by the service registration.
 - Every requested field appears in that service's field allowlist.
+- The JWT was issued by a WRITE service explicitly bound to this READ service.
 
 Autobricks JWT rejects the complete request with `8064
 FIELD_NOT_AUTHORIZED` when any requested field is not registered. It does not
@@ -410,9 +428,18 @@ service's fields, create a JWT session, or expand the registered field scope.
 Changing the allowlist is a management operation and does not occur through the
 runtime field-query interface.
 
+Each READ service also registers one or more allowed WRITE `service_id` values.
+This issuer allowlist is independent of the field allowlist. It prevents a
+READ credential that is valid for one application boundary from querying a
+token issued for another application boundary merely because both tokens use
+the same subject type and field names. Every referenced issuer must be an
+active WRITE service with the same subject type. The complete binding is
+stored in SQLCipher and restored with the service registry after restart.
+
 ## Security Boundary
 
 The APIKEY authenticates the registered service request but does not replace
 the client credential or client permission. Runtime authorization requires the
 connection credential, active `client_id`, matching service binding, matching
-APIKEY, and registered subject or field permissions to agree.
+APIKEY, allowed issuer service, and registered subject or field permissions to
+agree.

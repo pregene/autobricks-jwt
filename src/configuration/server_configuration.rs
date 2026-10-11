@@ -18,6 +18,25 @@ pub struct ServerConfiguration {
     pub backup_interval_days: u8,
     pub logging: LoggingSelection,
     pub management_socket: PathBuf,
+    pub database_path: PathBuf,
+    pub hsm_helper: PathBuf,
+    pub hsm_key_namespace: String,
+    pub runtime_transports: Vec<RuntimeTransport>,
+    pub service_socket: PathBuf,
+    pub tcp_address: String,
+    pub tls_address: String,
+    pub mtls_address: String,
+    pub server_certificate: Option<PathBuf>,
+    pub server_private_key: Option<PathBuf>,
+    pub client_trust_chain: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeTransport {
+    Unix,
+    Tcp,
+    Tls,
+    MutualTls,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -125,6 +144,17 @@ impl ServerConfiguration {
             "log_issuance",
             "log_audit",
             "management_socket",
+            "database_path",
+            "hsm_helper",
+            "hsm_key_namespace",
+            "runtime_transports",
+            "service_socket",
+            "tcp_address",
+            "tls_address",
+            "mtls_address",
+            "server_certificate",
+            "server_private_key",
+            "client_trust_chain",
         ];
         if let Some(key) = values
             .keys()
@@ -194,6 +224,64 @@ impl ServerConfiguration {
             ));
         }
 
+        let database_path = PathBuf::from(take_required(&mut values, "database_path")?);
+        if !database_path.is_absolute() {
+            return Err(ServiceError::configuration_invalid(
+                "database_path must be an absolute path",
+            ));
+        }
+        let hsm_helper = PathBuf::from(take_required(&mut values, "hsm_helper")?);
+        if !hsm_helper.is_absolute() {
+            return Err(ServiceError::configuration_invalid(
+                "hsm_helper must be an absolute path",
+            ));
+        }
+        let hsm_key_namespace = take_required(&mut values, "hsm_key_namespace")?;
+
+        let runtime_transports = parse_transports(
+            &values
+                .remove("runtime_transports")
+                .unwrap_or_else(|| "UNIX".to_owned()),
+        )?;
+        let service_socket = values
+            .remove("service_socket")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/run/autobricks-jwt/service.sock"));
+        if !service_socket.is_absolute() {
+            return Err(ServiceError::configuration_invalid(
+                "service_socket must be an absolute path",
+            ));
+        }
+        let tcp_address = values
+            .remove("tcp_address")
+            .unwrap_or_else(|| "127.0.0.1:0".to_owned());
+        let tls_address = values
+            .remove("tls_address")
+            .unwrap_or_else(|| "127.0.0.1:0".to_owned());
+        let mtls_address = values
+            .remove("mtls_address")
+            .unwrap_or_else(|| "127.0.0.1:0".to_owned());
+        let server_certificate = values.remove("server_certificate").map(PathBuf::from);
+        let server_private_key = values.remove("server_private_key").map(PathBuf::from);
+        let client_trust_chain = values.remove("client_trust_chain").map(PathBuf::from);
+        let certificate_transport = runtime_transports.iter().any(|transport| {
+            matches!(
+                transport,
+                RuntimeTransport::Tls | RuntimeTransport::MutualTls
+            )
+        });
+        if certificate_transport && (server_certificate.is_none() || server_private_key.is_none()) {
+            return Err(ServiceError::configuration_invalid(
+                "TLS transports require server_certificate and server_private_key",
+            ));
+        }
+        if runtime_transports.contains(&RuntimeTransport::MutualTls) && client_trust_chain.is_none()
+        {
+            return Err(ServiceError::configuration_invalid(
+                "MTLS transport requires client_trust_chain",
+            ));
+        }
+
         Ok(Self {
             timeout_seconds,
             require_token_for_query_and_revoke,
@@ -202,8 +290,48 @@ impl ServerConfiguration {
             backup_interval_days,
             logging,
             management_socket,
+            database_path,
+            hsm_helper,
+            hsm_key_namespace,
+            runtime_transports,
+            service_socket,
+            tcp_address,
+            tls_address,
+            mtls_address,
+            server_certificate,
+            server_private_key,
+            client_trust_chain,
         })
     }
+}
+
+fn parse_transports(value: &str) -> Result<Vec<RuntimeTransport>, ServiceError> {
+    let mut transports = Vec::new();
+    for name in value.split(',').map(str::trim) {
+        let transport = match name {
+            "UNIX" => RuntimeTransport::Unix,
+            "TCP" => RuntimeTransport::Tcp,
+            "TLS" => RuntimeTransport::Tls,
+            "MTLS" => RuntimeTransport::MutualTls,
+            _ => {
+                return Err(ServiceError::configuration_invalid(
+                    "runtime_transports contains an unsupported transport",
+                ));
+            }
+        };
+        if transports.contains(&transport) {
+            return Err(ServiceError::configuration_invalid(
+                "runtime_transports contains a duplicate transport",
+            ));
+        }
+        transports.push(transport);
+    }
+    if transports.is_empty() {
+        return Err(ServiceError::configuration_invalid(
+            "runtime_transports must not be empty",
+        ));
+    }
+    Ok(transports)
 }
 
 fn take_required(values: &mut BTreeMap<String, String>, key: &str) -> Result<String, ServiceError> {
@@ -229,7 +357,7 @@ mod tests {
     #[test]
     fn parses_secure_defaults() {
         let configuration = ServerConfiguration::parse(
-            "timeout: 3600\nbackup_directory: /var/lib/autobricks-jwt/backups\nlog_request: true\nlog_query: true\nlog_issuance: true\nlog_audit: true\n",
+            "timeout: 3600\nbackup_directory: /var/lib/autobricks-jwt/backups\nlog_request: true\nlog_query: true\nlog_issuance: true\nlog_audit: true\ndatabase_path: /var/lib/autobricks-jwt/jwt.db\nhsm_helper: /usr/libexec/autobricks-jwt-hsm\nhsm_key_namespace: autobricks-jwt/database\n",
         )
         .unwrap();
 
@@ -245,7 +373,7 @@ mod tests {
     #[test]
     fn parses_explicit_values() {
         let configuration = ServerConfiguration::parse(
-            "timeout: 900\nrequire_token_for_query_and_revoke: false\ncertificate_renewal_time: 23:45\nbackup_directory: /secure/backup\nbackup_interval_days: 7\nlog_request: false\nlog_query: true\nlog_issuance: false\nlog_audit: true\n",
+            "timeout: 900\nrequire_token_for_query_and_revoke: false\ncertificate_renewal_time: 23:45\nbackup_directory: /secure/backup\nbackup_interval_days: 7\nlog_request: false\nlog_query: true\nlog_issuance: false\nlog_audit: true\ndatabase_path: /secure/jwt.db\nhsm_helper: /usr/libexec/autobricks-jwt-hsm\nhsm_key_namespace: autobricks-jwt/database\n",
         )
         .unwrap();
 

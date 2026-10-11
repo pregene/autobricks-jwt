@@ -149,15 +149,17 @@ fn process_server_request(
                 service_name,
                 subject_type,
                 allowed_jwt_query_fields,
+                allowed_issuer_service_ids,
                 source_type,
                 encryption_profile,
-            } => Ok(json!(registry.register_service_with_configuration(
+            } => Ok(json!(registry.register_service_with_issuers(
                 client_id,
                 &service_name,
                 &subject_type,
                 allowed_jwt_query_fields,
                 source_type,
                 encryption_profile,
+                allowed_issuer_service_ids,
             )?)),
             ManagementRequest::ListServices { client_id } => {
                 Ok(json!(registry.services(client_id)))
@@ -372,6 +374,7 @@ mod tests {
                 service_name: "login-issuer".into(),
                 subject_type: "USER".into(),
                 allowed_jwt_query_fields: Vec::new(),
+                allowed_issuer_service_ids: Vec::new(),
                 source_type: Some("DATABASE".into()),
                 encryption_profile: Some("JWE_DIR_A256GCM".into()),
             },
@@ -391,6 +394,7 @@ mod tests {
                 service_name: "policy-query".into(),
                 subject_type: "USER".into(),
                 allowed_jwt_query_fields: vec!["user_id".into(), "role".into()],
+                allowed_issuer_service_ids: vec![write_service_id],
                 source_type: None,
                 encryption_profile: None,
             },

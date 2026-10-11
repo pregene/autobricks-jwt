@@ -183,13 +183,14 @@ mod tests {
             .register_client("runtime-reader", OperationClass::Read)
             .unwrap();
         let reader = registry
-            .register_service_with_configuration(
+            .register_service_with_issuers(
                 reader_id,
                 "runtime-query",
                 "USER",
                 vec!["user_id".into(), "role".into()],
                 None,
                 None,
+                vec![writer.service_id],
             )
             .unwrap();
         let mut dispatcher =

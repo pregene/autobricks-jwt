@@ -60,6 +60,11 @@ impl SqlCipherTokenRepository {
                     PRIMARY KEY(token_id, version),
                     UNIQUE(client_id, request_id),
                     FOREIGN KEY(kid) REFERENCES token_keys(kid)
+                );
+                CREATE TABLE IF NOT EXISTS cache_cleanup_queue (
+                    token_id TEXT PRIMARY KEY,
+                    requested_at INTEGER NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0
                 );",
             )
             .map_err(database_error)?;
@@ -309,6 +314,80 @@ impl SqlCipherTokenRepository {
             )
             .map_err(database_error)?;
         transaction.commit().map_err(database_error)
+    }
+
+    pub fn revoke_active_with_cache_cleanup(
+        &mut self,
+        token_id: Uuid,
+        requested_at: u64,
+    ) -> Result<(), ServiceError> {
+        let transaction = self.connection.transaction().map_err(database_error)?;
+        let versions = transaction
+            .execute(
+                "UPDATE token_versions SET status = 'REVOKED'
+                  WHERE token_id = ?1 AND status = 'ACTIVE'",
+                [token_id.to_string()],
+            )
+            .map_err(database_error)?;
+        if versions != 1 {
+            return Err(session_missing());
+        }
+        transaction
+            .execute(
+                "UPDATE token_keys SET status = 'REVOKED'
+                  WHERE token_id = ?1 AND status = 'ACTIVE'",
+                [token_id.to_string()],
+            )
+            .map_err(database_error)?;
+        transaction
+            .execute(
+                "INSERT INTO cache_cleanup_queue (token_id, requested_at, attempts)
+                 VALUES (?1, ?2, 0)
+                 ON CONFLICT(token_id) DO UPDATE SET requested_at = excluded.requested_at",
+                params![token_id.to_string(), integer_time(requested_at)?],
+            )
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    pub fn pending_cache_cleanup(&self) -> Result<Vec<Uuid>, ServiceError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT token_id FROM cache_cleanup_queue ORDER BY requested_at, token_id")
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.map(|row| {
+            Uuid::parse_str(&row.map_err(database_error)?)
+                .map_err(|_| database_error("cache cleanup token identifier is invalid"))
+        })
+        .collect()
+    }
+
+    pub fn record_cache_cleanup_attempt(&mut self, token_id: Uuid) -> Result<(), ServiceError> {
+        let updated = self
+            .connection
+            .execute(
+                "UPDATE cache_cleanup_queue SET attempts = attempts + 1 WHERE token_id = ?1",
+                [token_id.to_string()],
+            )
+            .map_err(database_error)?;
+        if updated == 1 {
+            Ok(())
+        } else {
+            Err(database_error("cache cleanup record is unavailable"))
+        }
+    }
+
+    pub fn complete_cache_cleanup(&mut self, token_id: Uuid) -> Result<(), ServiceError> {
+        self.connection
+            .execute(
+                "DELETE FROM cache_cleanup_queue WHERE token_id = ?1",
+                [token_id.to_string()],
+            )
+            .map_err(database_error)?;
+        Ok(())
     }
 
     pub fn revoke_active_by_client(&mut self, client_id: Uuid) -> Result<usize, ServiceError> {

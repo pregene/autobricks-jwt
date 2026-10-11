@@ -31,6 +31,8 @@ pub enum ManagementRequest {
         subject_type: String,
         #[serde(default)]
         allowed_jwt_query_fields: Vec<String>,
+        #[serde(default)]
+        allowed_issuer_service_ids: Vec<Uuid>,
         source_type: Option<String>,
         encryption_profile: Option<String>,
     },
