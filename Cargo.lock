@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "autobricks-jwt"
-version = "0.1.169"
+version = "0.1.170"
 dependencies = [
  "base64 0.22.1",
  "cryptoki",

@@ -630,7 +630,7 @@ fn prompt_with_echo(label: &str, default: Option<&str>, visible: bool) -> Result
     }
     line(5, 2, "> ");
     unsafe { refresh() };
-    let mut buffer = vec![0_i8; 4097];
+    let mut buffer = vec![0 as c_char; 4097];
     let status = unsafe { getnstr(buffer.as_mut_ptr(), 4096) };
     unsafe {
         noecho();

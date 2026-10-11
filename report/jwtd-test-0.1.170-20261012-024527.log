@@ -1,8 +1,7 @@
 bash: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
-Autobricks JWT Server Test 0.1.169
+Autobricks JWT Server Test 0.1.170
 Building ab-jwtd...
-   Compiling autobricks-jwt v0.1.169 (<redacted-path>)
-    Finished `release` profile [optimized] target(s) in 29.59s
+    Finished `release` profile [optimized] target(s) in 0.20s
 
 [TEST 001]
 Purpose : Build and install the release test binary
@@ -134,14 +133,14 @@ Result  : PASS
 
 [TEST 021]
 Purpose : version uses VERSION
-Expected: exit=0 and output contains 'Autobricks JWT Server 0.1.169'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.169
+Expected: exit=0 and output contains 'Autobricks JWT Server 0.1.170'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.170
 Result  : PASS
 
 [TEST 022]
 Purpose : help names configuration validation
 Expected: exit=0 and output contains 'ab-jwtd --check-config PATH'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.169 (C) 2026 Autobricks, Co.
+Actual  : exit=0; output=Autobricks JWT Server 0.1.170 (C) 2026 Autobricks, Co.
 Usage:
 ab-jwtd --initialize PATH
 ab-jwtd --check-config PATH
@@ -158,7 +157,7 @@ Result  : PASS
 [TEST 023]
 Purpose : no arguments display help
 Expected: exit=0 and output contains 'Usage:'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.169 (C) 2026 Autobricks, Co.
+Actual  : exit=0; output=Autobricks JWT Server 0.1.170 (C) 2026 Autobricks, Co.
 Usage:
 ab-jwtd --initialize PATH
 ab-jwtd --check-config PATH
@@ -175,7 +174,7 @@ Result  : PASS
 [TEST 024]
 Purpose : minimal configuration uses secure token default
 Expected: exit=0 and output contains 'Require complete token for query and revoke: true'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.169
+Actual  : exit=0; output=Autobricks JWT Server 0.1.170
 Configuration: valid
 Keep-alive timeout: 3600 seconds
 Require complete token for query and revoke: true
@@ -187,7 +186,7 @@ Result  : PASS
 [TEST 025]
 Purpose : minimal configuration uses 04:00 renewal default
 Expected: exit=0 and output contains 'Certificate renewal time: 04:00'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.169
+Actual  : exit=0; output=Autobricks JWT Server 0.1.170
 Configuration: valid
 Keep-alive timeout: 3600 seconds
 Require complete token for query and revoke: true
@@ -199,7 +198,7 @@ Result  : PASS
 [TEST 026]
 Purpose : explicit configuration is accepted
 Expected: exit=0 and output contains 'Certificate renewal time: 23:45'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.169
+Actual  : exit=0; output=Autobricks JWT Server 0.1.170
 Configuration: valid
 Keep-alive timeout: 900 seconds
 Require complete token for query and revoke: false
@@ -493,13 +492,13 @@ Expected: mTLS-backed TrueLog append succeeds and returns a JSON receipt
 Actual  : {
   "after": {
     "checksum": "<redacted-hex>",
-    "file": "truelog-2026-10-11.log",
-    "filesize": 26152
+    "file": "truelog-2026-10-12.log",
+    "filesize": 184
   },
   "before": {
     "checksum": "<redacted-hex>",
-    "file": "truelog-2026-10-11.log",
-    "filesize": 25968
+    "file": "truelog-2026-10-12.log",
+    "filesize": 0
   },
   "hostname": "<redacted>",
   "service": "autobricks-jwt"
@@ -509,60 +508,76 @@ Result  : PASS
 [TEST 062]
 Purpose : Validate the complete TrueLog append receipt
 Expected: identity, file boundary, increasing size, and both SHA-256 values satisfy LOGGING.md
-Actual  : validated service=autobricks-jwt file=truelog-2026-10-11.log bytes=25968->26152
+Actual  : validated service=autobricks-jwt file=truelog-2026-10-12.log bytes=0->184
 Result  : PASS
 
 [TEST 063]
 Purpose : Confirm the changed WORM file through ab-truelog-cli info
-Expected: current lock_offset equals the append receipt after.filesize (26152)
+Expected: current lock_offset equals the append receipt after.filesize (184)
 Actual  : {
   "checksum": "<redacted-hex>",
-  "created_at": 3924300,
+  "created_at": 4016442,
   "format_version": 1,
-  "lock_offset": 26152,
-  "retain_until": 35460300,
+  "lock_offset": 184,
+  "retain_until": 35552442,
   "sha256_state": [
-    88,
-    96,
-    205,
-    174,
-    252,
-    7,
-    81,
-    138,
-    44,
-    135,
-    193,
-    167,
-    228,
-    54,
-    219,
-    212,
-    204,
-    236,
-    71,
-    233,
-    202,
+    178,
+    87,
+    47,
+    92,
+    187,
+    60,
+    125,
+    61,
+    227,
+    250,
+    59,
+    201,
+    161,
+    80,
+    142,
+    242,
     218,
-    164,
-    1,
-    170,
-    25,
-    153,
-    191,
-    67,
     163,
-    122,
-    39,
-    152,
-    1,
+    51,
+    202,
+    233,
+    165,
+    164,
+    11,
+    107,
+    185,
+    125,
+    59,
+    2,
+    131,
+    216,
+    223,
+    2,
     0,
     0,
     0,
     0,
     0,
     0,
-    40,
+    0,
+    56,
+    34,
+    44,
+    34,
+    114,
+    101,
+    115,
+    117,
+    108,
+    116,
+    34,
+    58,
+    34,
+    83,
+    85,
+    67,
+    67,
     69,
     83,
     83,
@@ -592,33 +607,17 @@ Actual  : {
     49,
     84,
     49,
-    52,
-    58,
-    52,
     55,
     58,
-    49,
-    49,
+    52,
+    53,
+    58,
+    51,
+    48,
     90,
     34,
     125,
     10,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     0,
     0,
     0,
@@ -651,7 +650,7 @@ Result  : PASS
 [TEST 067]
 Purpose : Reload the complete receipt from the audit database
 Expected: service, file, before size, and after size match the write receipt
-Actual  : Audit receipt reloaded: service=autobricks-jwt file=truelog-2026-10-11.log before=25968 after=26152
+Actual  : Audit receipt reloaded: service=autobricks-jwt file=truelog-2026-10-12.log before=0 after=184
 Result  : PASS
 
 [TEST 068]
@@ -664,8 +663,8 @@ Running ab-jwt-cli through the two management Unix sockets...
 
 [TEST 069]
 Purpose : Build and execute ab-jwt-cli
-Expected: the management client reports version 0.1.169
-Actual  : Autobricks JWT Management Client 0.1.169
+Expected: the management client reports version 0.1.170
+Actual  : Autobricks JWT Management Client 0.1.170
 Result  : PASS
 
 [TEST 070]
@@ -689,7 +688,7 @@ Result  : PASS
 [TEST 073]
 Purpose : List registered clients through ab-jwt-cli
 Expected: the response contains the two active client registrations
-Actual  : [{"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"policy-read","keep_alive_timeout":900,"operation_class":"READ","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["MTLS"]},{"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"web-server-write","keep_alive_timeout":3600,"operation_class":"WRITE","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["UNIX","MTLS"]}]
+Actual  : [{"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"web-server-write","keep_alive_timeout":3600,"operation_class":"WRITE","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["UNIX","MTLS"]},{"allowed_source_cidr":"<redacted-private-ip>/24","client_id":"<redacted-secret>","client_name":"policy-read","keep_alive_timeout":900,"operation_class":"READ","peer_gid":"<redacted>","peer_uid":"<redacted>","transports":["MTLS"]}]
 Result  : PASS
 
 [TEST 074]

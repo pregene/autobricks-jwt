@@ -1,6 +1,6 @@
 [package]
 name = "autobricks-jwt"
-version = "0.1.169"
+version = "0.1.170"
 edition = "2024"
 license-file = "LICENSE"
 description = "Opaque encrypted JWT service for the Autobricks family"
