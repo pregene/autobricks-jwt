@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::{
+    database_source::DatabaseSourceCache,
     jwe_token::{EncryptionProfile, IssuedToken},
     service_error::ServiceError,
     service_registry::{OperationClass, ServiceRegistry},
@@ -70,27 +71,12 @@ impl<'a> IssuanceService<'a> {
         request: JwtCreateRequest,
         now: u64,
     ) -> Result<JwtCreateResponse, ServiceError> {
-        if request.apikey.is_empty() || request.data.is_empty() {
-            return Err(ServiceError::invalid_request(
-                "APIKEY and subject data are required",
-            ));
-        }
+        validate_create_request(&request)?;
         let service = self.registry.authorize_service_by_apikey(
             request.client_id,
             &request.apikey,
             OperationClass::Write,
         )?;
-        if service.source_type.as_deref() != Some("CLIENT_JSON") {
-            return Err(ServiceError::classified(
-                8052,
-                "CLIENT_JSON is not configured for this service",
-            )
-            .expect("8052 must be assigned"));
-        }
-        let encryption_profile = EncryptionProfile::from_registration(
-            service.encryption_profile.as_deref().unwrap_or_default(),
-        )?;
-
         if let Some(existing) = self
             .tokens
             .load_active_by_request(request.client_id, request.request_id)?
@@ -98,15 +84,15 @@ impl<'a> IssuanceService<'a> {
             return Ok(response(request.request_id, existing));
         }
 
-        for reserved in RESERVED_CLAIMS {
-            if request.data.contains_key(reserved) {
-                return Err(ServiceError::classified(
-                    8054,
-                    "subject data contains a JWT-controlled field",
-                )
-                .expect("8054 must be assigned"));
-            }
+        if service.source_type.as_deref() != Some("CLIENT_JSON") {
+            return Err(ServiceError::classified(
+                8052,
+                "CLIENT_JSON is not configured for this service",
+            )
+            .expect("8052 must be assigned"));
         }
+
+        reject_reserved_claims(&request.data)?;
         if let Some(schema) = &service.client_json_schema {
             if request
                 .data
@@ -145,12 +131,67 @@ impl<'a> IssuanceService<'a> {
                 }
             }
         }
-        let subject_field = match service.subject_type.as_str() {
-            "USER" => "user_id",
-            "DEVICE" => "device_id",
-            "WORKLOAD" => "workload_id",
-            _ => return Err(ServiceError::invalid_subject("subject type is invalid")),
-        };
+        self.issue_subject(request, &service, now)
+    }
+
+    pub fn create_from_database<C: DatabaseSourceCache>(
+        &mut self,
+        request: JwtCreateRequest,
+        now: u64,
+        cache: &C,
+    ) -> Result<JwtCreateResponse, ServiceError> {
+        validate_create_request(&request)?;
+        let service = self.registry.authorize_service_by_apikey(
+            request.client_id,
+            &request.apikey,
+            OperationClass::Write,
+        )?;
+        if let Some(existing) = self
+            .tokens
+            .load_active_by_request(request.client_id, request.request_id)?
+        {
+            return Ok(response(request.request_id, existing));
+        }
+        if service.source_type.as_deref() != Some("DATABASE") {
+            return Err(ServiceError::classified(
+                8052,
+                "DATABASE is not configured for this service",
+            )
+            .expect("8052 must be assigned"));
+        }
+        let plan = service.database_source.as_ref().ok_or_else(|| {
+            ServiceError::classified(8052, "DATABASE source plan is unavailable")
+                .expect("8052 must be assigned")
+        })?;
+        let conditions = Value::Object(request.data);
+        let record = plan.load_subject(cache, &conditions)?;
+        let data = record.as_object().cloned().ok_or_else(|| {
+            ServiceError::classified(8054, "DATABASE subject record is invalid")
+                .expect("8054 must be assigned")
+        })?;
+        reject_reserved_claims(&data)?;
+        self.issue_subject(
+            JwtCreateRequest {
+                client_id: request.client_id,
+                apikey: request.apikey,
+                request_id: request.request_id,
+                data,
+            },
+            &service,
+            now,
+        )
+    }
+
+    fn issue_subject(
+        &mut self,
+        request: JwtCreateRequest,
+        service: &crate::service_registry::ServiceSummary,
+        now: u64,
+    ) -> Result<JwtCreateResponse, ServiceError> {
+        let encryption_profile = EncryptionProfile::from_registration(
+            service.encryption_profile.as_deref().unwrap_or_default(),
+        )?;
+        let subject_field = subject_field(&service.subject_type)?;
         let subject = request
             .data
             .get(subject_field)
@@ -217,6 +258,39 @@ impl<'a> IssuanceService<'a> {
     }
 }
 
+fn validate_create_request(request: &JwtCreateRequest) -> Result<(), ServiceError> {
+    if request.apikey.is_empty() || request.data.is_empty() {
+        Err(ServiceError::invalid_request(
+            "APIKEY and subject data are required",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn reject_reserved_claims(data: &Map<String, Value>) -> Result<(), ServiceError> {
+    if RESERVED_CLAIMS
+        .iter()
+        .any(|field| data.contains_key(*field))
+    {
+        Err(
+            ServiceError::classified(8054, "subject data contains a JWT-controlled field")
+                .expect("8054 must be assigned"),
+        )
+    } else {
+        Ok(())
+    }
+}
+
+fn subject_field(subject_type: &str) -> Result<&'static str, ServiceError> {
+    match subject_type {
+        "USER" => Ok("user_id"),
+        "DEVICE" => Ok("device_id"),
+        "WORKLOAD" => Ok("workload_id"),
+        _ => Err(ServiceError::invalid_subject("subject type is invalid")),
+    }
+}
+
 fn response(request_id: Uuid, issued: IssuedToken) -> JwtCreateResponse {
     JwtCreateResponse {
         request_id,
@@ -227,13 +301,37 @@ fn response(request_id: Uuid, issued: IssuedToken) -> JwtCreateResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{cell::Cell, fs};
 
     use base64::Engine;
     use serde_json::{Map, Value};
 
     use super::*;
+    use crate::database_source::{
+        DatabaseConnectionInput, DatabaseSourceCache, DatabaseSourceInput, DatabaseTlsMode,
+        QueryBinding,
+    };
     use crate::session_cache::tests::MemorySessionCache;
+
+    struct SubjectCache {
+        queries: Cell<usize>,
+    }
+
+    impl DatabaseSourceCache for SubjectCache {
+        fn query(&self, _: &str, input: &Value) -> Result<Vec<Value>, ServiceError> {
+            self.queries.set(self.queries.get() + 1);
+            assert_eq!(input["user_id"], "database-user");
+            Ok(vec![serde_json::json!({
+                "id": 7,
+                "user_id": "database-user",
+                "role": "member"
+            })])
+        }
+
+        fn update(&self, _: &str, _: &Value) -> Result<(), ServiceError> {
+            unreachable!()
+        }
+    }
 
     #[derive(Default)]
     struct AuditCapture {
@@ -320,6 +418,86 @@ mod tests {
         drop(registry);
         fs::remove_file(registration_path).unwrap();
         fs::remove_file(token_path).unwrap();
+    }
+
+    #[test]
+    fn registered_database_source_loads_one_subject_and_idempotently_issues_the_token() {
+        let path = std::env::temp_dir().join(format!("ab-jwt-db-issue-{}.db", Uuid::new_v4()));
+        let key = [0x60; 32];
+        let mut registry = ServiceRegistry::open_sqlcipher(&path, &key).unwrap();
+        let client_id = registry
+            .register_client("database-issuer", OperationClass::Write)
+            .unwrap();
+        let (credential, _) = registry
+            .register_database_service(
+                client_id,
+                "database-login",
+                "USER",
+                "JWE_DIR_A256GCM",
+                DatabaseSourceInput {
+                    connection: DatabaseConnectionInput {
+                        name: "subjects".into(),
+                        driver: "postgresql".into(),
+                        host: "database.invalid".into(),
+                        port: 5432,
+                        database: "identity".into(),
+                        queue_directory: "/var/lib/autobricks-jwt/queue".into(),
+                        username: "jwt".into(),
+                        password: "secret".into(),
+                        tls_mode: DatabaseTlsMode::Disabled,
+                        ca_file: None,
+                        certificate: None,
+                        private_key: None,
+                        connect_timeout_ms: 1_000,
+                        query_timeout_ms: 2_000,
+                        pool_size: 2,
+                        sqlite_options: None,
+                    },
+                    primary_key: vec!["id".into()],
+                    maps: vec![vec!["user_id".into()]],
+                    select: QueryBinding {
+                        query: "SELECT id,user_id,role FROM users WHERE user_id=$1".into(),
+                        fields: vec!["user_id".into()],
+                    },
+                    update: None,
+                    retention_seconds: 3_600,
+                },
+            )
+            .unwrap();
+        let mut tokens = SqlCipherTokenRepository::open(&path, &key).unwrap();
+        let request_id = Uuid::new_v4();
+        let request = || JwtCreateRequest {
+            client_id,
+            apikey: credential.apikey.clone(),
+            request_id,
+            data: Map::from_iter([("user_id".into(), Value::String("database-user".into()))]),
+        };
+        let cache = SubjectCache {
+            queries: Cell::new(0),
+        };
+        let mut issuance =
+            IssuanceService::new(&registry, &mut tokens, Duration::from_secs(300)).unwrap();
+        let first = issuance
+            .create_from_database(request(), 1_000, &cache)
+            .unwrap();
+        let retry = issuance
+            .create_from_database(request(), 1_100, &cache)
+            .unwrap();
+        assert_eq!(first, retry);
+        assert_eq!(cache.queries.get(), 1);
+        let issued = tokens.load_active(first.token_id).unwrap().unwrap();
+        let fields = issued
+            .verify_and_query(
+                &first.token,
+                &credential.service_id.to_string(),
+                1_101,
+                &["user_id"],
+            )
+            .unwrap();
+        assert_eq!(fields["user_id"], "database-user");
+        drop(tokens);
+        drop(registry);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

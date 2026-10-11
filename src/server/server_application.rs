@@ -1,24 +1,48 @@
 use std::{
     ffi::OsString,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use crate::{
     VERSION,
-    database_key_rotation::CommandHsmDatabaseKeys,
-    management_service,
+    database_key_rotation::{CommandHsmDatabaseKeys, HsmDatabaseKeys},
+    helper_service, management_service,
+    privileged_runtime::PrivilegedRuntime,
+    production_scheduler::{ProductionSchedulerRuntime, ScheduledCertificateRenewal},
+    recovery_management::ProductionRecoveryManagement,
     runtime_context::RuntimeServiceContext,
-    runtime_listeners::RuntimeListenerSet,
+    runtime_supervisor::RuntimeSupervisor,
     server_arguments::{self, ServerCommand},
+    server_certificate_renewal::ProductionServerCertificateRenewal,
     server_configuration::ServerConfiguration,
+    service_certificate_management::ProductionCertificateManagement,
     service_error::ServiceError,
     service_registry::ServiceRegistry,
+    worker_process,
 };
 
-#[cfg(test)]
-use crate::database_key_rotation::HsmDatabaseKeys;
-
 const PRODUCT: &str = "Autobricks JWT Server";
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn request_shutdown(_: libc::c_int) {
+    SHUTDOWN_REQUESTED.store(true, Ordering::Release);
+}
+
+fn install_shutdown_handlers() -> Result<Arc<AtomicBool>, ServiceError> {
+    SHUTDOWN_REQUESTED.store(false, Ordering::Release);
+    let handler = request_shutdown as *const () as libc::sighandler_t;
+    if unsafe { libc::signal(libc::SIGTERM, handler) } == libc::SIG_ERR
+        || unsafe { libc::signal(libc::SIGINT, handler) } == libc::SIG_ERR
+    {
+        return Err(ServiceError::service_unavailable(
+            "shutdown signal handlers cannot be installed",
+        ));
+    }
+    Ok(Arc::new(AtomicBool::new(false)))
+}
 
 pub fn execute<I>(arguments: I) -> Result<String, ServiceError>
 where
@@ -31,24 +55,153 @@ where
             let configuration = ServerConfiguration::load(&path)?;
             Ok(render_configuration(&configuration))
         }
-        ServerCommand::Serve(path) => {
+        ServerCommand::Initialize(path) => {
             let configuration = ServerConfiguration::load(&path)?;
             let hsm = CommandHsmDatabaseKeys::new(
                 &configuration.hsm_helper,
                 &configuration.hsm_key_namespace,
             )?;
-            let context = RuntimeServiceContext::open(
+            hsm.initialize_current()?;
+            let current = hsm.current()?;
+            let mut recovery =
+                crate::recovery_authorization::RecoveryAuthorizationRepository::open(
+                    &configuration.database_path,
+                    &current,
+                )?;
+            let recovery_key = recovery.initialize(unix_time()?)?;
+            let verifier = recovery.require()?;
+            drop(recovery);
+            let mut protection = crate::database_key_rotation::DatabaseProtectionManager::new(
+                &configuration.database_path,
+                &configuration.backup_directory,
+                hsm,
+                verifier,
+            )?;
+            let initialization = protection
+                .initialize_schema()
+                .and_then(|_| protection.scheduled_backup_and_rotate(unix_time()?));
+            if let Err(error) = initialization {
+                if let Ok(mut recovery) =
+                    crate::recovery_authorization::RecoveryAuthorizationRepository::open(
+                        &configuration.database_path,
+                        &current,
+                    )
+                {
+                    let _ = recovery.clear_failed_initialization();
+                }
+                return Err(error);
+            }
+            Ok(format!("Recovery authorization key: {recovery_key}\n"))
+        }
+        ServerCommand::Serve(path) => {
+            let shutdown = install_shutdown_handlers()?;
+            let configuration = ServerConfiguration::load(&path)?;
+            let hsm = CommandHsmDatabaseKeys::new(
+                &configuration.hsm_helper,
+                &configuration.hsm_key_namespace,
+            )?;
+            let executable = std::env::current_exe().map_err(|_| {
+                ServiceError::service_unavailable("server executable path is unavailable")
+            })?;
+            let mut context = RuntimeServiceContext::open_with_cache(
                 &configuration.database_path,
                 &hsm,
                 std::time::Duration::from_secs(configuration.timeout_seconds),
                 configuration.require_token_for_query_and_revoke,
+                &executable,
+                &configuration.cache_library,
             )?;
-            let _runtime_listeners = RuntimeListenerSet::bind(&configuration)?;
-            management_service::serve_server(
+            let database_key = hsm.current()?;
+            context.configure_audit(
+                &database_key,
+                configuration.logging.audit,
+                configuration.truelog_client.as_deref(),
+            )?;
+            context.enable_session_cache(
+                &executable,
+                &configuration.cache_library,
+                &database_key,
+                unix_time()?,
+            )?;
+            let privileged = PrivilegedRuntime::start(&configuration, database_key)?;
+            let supervisor = Arc::new(RuntimeSupervisor::start(configuration.clone(), context)?);
+            let context = supervisor.context();
+            let recovery = Arc::new(ProductionRecoveryManagement::new(
+                Arc::clone(&supervisor),
+                configuration.clone(),
+                executable,
+            ));
+            let certificate_renewal: Option<Arc<dyn ScheduledCertificateRenewal>> = if configuration
+                .pki_client
+                .is_some()
+                && configuration.runtime_transports.iter().any(|transport| {
+                    matches!(
+                        transport,
+                        crate::server_configuration::RuntimeTransport::Tls
+                            | crate::server_configuration::RuntimeTransport::MutualTls
+                    )
+                }) {
+                Some(Arc::new(ProductionServerCertificateRenewal::new(
+                    configuration.clone(),
+                    Arc::clone(&supervisor),
+                )))
+            } else {
+                None
+            };
+            let scheduler = ProductionSchedulerRuntime::start(
+                &configuration,
+                Arc::clone(&recovery),
+                certificate_renewal,
+            )?;
+            let certificates =
+                Arc::new(ProductionCertificateManagement::new(configuration.clone()));
+            let signal_bridge = Arc::clone(&shutdown);
+            let signal_thread = std::thread::spawn(move || {
+                while !SHUTDOWN_REQUESTED.load(Ordering::Acquire)
+                    && !signal_bridge.load(Ordering::Acquire)
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                if SHUTDOWN_REQUESTED.load(Ordering::Acquire) {
+                    signal_bridge.store(true, Ordering::Release);
+                }
+            });
+            let server_result = management_service::serve_runtime_server(
                 &configuration.management_socket,
                 usize::MAX,
-                context.registry(),
-            )?;
+                Arc::clone(&context),
+                management_service::ManagementCapabilities {
+                    transports: configuration
+                        .runtime_transports
+                        .iter()
+                        .map(|transport| match transport {
+                            crate::server_configuration::RuntimeTransport::Unix => "UNIX",
+                            crate::server_configuration::RuntimeTransport::Tcp => "TCP",
+                            crate::server_configuration::RuntimeTransport::Tls => "TLS",
+                            crate::server_configuration::RuntimeTransport::MutualTls => "MTLS",
+                        })
+                        .map(str::to_owned)
+                        .collect(),
+                    encryption_profiles: vec![
+                        "JWE_DIR_A128GCM".into(),
+                        "JWE_DIR_A192GCM".into(),
+                        "JWE_DIR_A256GCM".into(),
+                    ],
+                    pki_available: configuration.pki_client.is_some(),
+                },
+                recovery,
+                certificates,
+                Arc::clone(&shutdown),
+            );
+            shutdown.store(true, Ordering::Release);
+            let _ = signal_thread.join();
+            let scheduler_result = scheduler.shutdown();
+            let supervisor_result = supervisor.shutdown();
+            let privileged_result = privileged.shutdown();
+            server_result?;
+            scheduler_result?;
+            supervisor_result?;
+            privileged_result?;
             Ok("Autobricks JWT server stopped\n".into())
         }
         ServerCommand::ManagementTestServer(path, request_count) => {
@@ -59,7 +212,22 @@ where
             )?;
             Ok("Management test server stopped\n".into())
         }
+        ServerCommand::CacheWorker => {
+            worker_process::run_worker()?;
+            Ok(String::new())
+        }
+        ServerCommand::HsmHelper => {
+            helper_service::run_from_environment()?;
+            Ok(String::new())
+        }
     }
+}
+
+fn unix_time() -> Result<u64, ServiceError> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .map_err(|_| ServiceError::internal("system time is before the Unix epoch"))
 }
 
 #[cfg(test)]
@@ -80,6 +248,7 @@ fn help() -> String {
     format!(
         "{PRODUCT} {VERSION} (C) 2026 Autobricks, Co.\n\
 Usage:\n\
+  ab-jwtd --initialize PATH\n\
   ab-jwtd --check-config PATH\n\
   ab-jwtd --config PATH\n\
   ab-jwtd --help\n\

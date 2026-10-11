@@ -10,9 +10,11 @@ use crate::{
 pub fn server_configuration(
     certificate_path: &Path,
     private_key_path: &Path,
+    server_trust_chain_path: &Path,
     client_trust_chain_path: &Path,
 ) -> Result<Arc<ServerConfig>, ServiceError> {
-    let certificates = load_certificates(certificate_path)?;
+    let mut certificates = load_certificates(certificate_path)?;
+    certificates.extend(load_certificates(server_trust_chain_path)?);
     let private_key = load_private_key(private_key_path)?;
     let roots = Arc::new(load_roots(client_trust_chain_path)?);
     let verifier = WebPkiClientVerifier::builder(roots)
@@ -31,7 +33,8 @@ pub fn client_configuration(
     private_key_path: &Path,
 ) -> Result<Arc<ClientConfig>, ServiceError> {
     let roots: RootCertStore = load_roots(server_trust_chain_path)?;
-    let certificates = load_certificates(certificate_path)?;
+    let mut certificates = load_certificates(certificate_path)?;
+    certificates.extend(load_certificates(server_trust_chain_path)?);
     let private_key = load_private_key(private_key_path)?;
     let configuration = ClientConfig::builder()
         .with_root_certificates(roots)
@@ -57,6 +60,20 @@ mod tests {
     use super::{client_configuration, server_configuration};
 
     #[test]
+    fn client_configuration_includes_the_downloaded_identity_chain() {
+        let source = include_str!("mtls_listener.rs");
+        let client = source
+            .split("pub fn client_configuration")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(client.contains("certificates.extend(load_certificates(server_trust_chain_path)?)"));
+        assert!(client.contains("with_client_auth_cert(certificates, private_key)"));
+    }
+
+    #[test]
     #[ignore = "requires local Autobricks PKI test certificates"]
     fn accepts_registered_client_certificate_and_rejects_missing_certificate() {
         let server_certificate = required_path("AUTOBRICKS_JWT_TEST_SERVER_CERTIFICATE");
@@ -66,14 +83,24 @@ mod tests {
         let trust_chain = required_path("AUTOBRICKS_JWT_TEST_TRUST_CHAIN");
         let server_name = std::env::var("AUTOBRICKS_JWT_TEST_SERVER_NAME").unwrap();
 
-        let server_config =
-            server_configuration(&server_certificate, &server_private_key, &trust_chain).unwrap();
+        let server_config = server_configuration(
+            &server_certificate,
+            &server_private_key,
+            &trust_chain,
+            &trust_chain,
+        )
+        .unwrap();
         let client_config =
             client_configuration(&trust_chain, &client_certificate, &client_private_key).unwrap();
         exchange(server_config, client_config, &server_name).unwrap();
 
-        let server_config =
-            server_configuration(&server_certificate, &server_private_key, &trust_chain).unwrap();
+        let server_config = server_configuration(
+            &server_certificate,
+            &server_private_key,
+            &trust_chain,
+            &trust_chain,
+        )
+        .unwrap();
         let client_without_certificate = tls_listener::client_configuration(&trust_chain).unwrap();
         assert!(exchange(server_config, client_without_certificate, &server_name).is_err());
 

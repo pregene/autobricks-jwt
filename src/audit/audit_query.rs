@@ -2,6 +2,12 @@ use std::{
     io::{BufRead, BufReader, Write},
     os::unix::net::UnixStream,
     path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
@@ -26,11 +32,47 @@ pub fn serve_audit_query_socket(
     request_count: usize,
     repository: &AuditLogRepository,
 ) -> Result<(), ServiceError> {
+    serve_audit_query_socket_until(
+        socket_path,
+        expected_peer_uid,
+        request_count,
+        repository,
+        None,
+    )
+}
+
+pub fn serve_audit_query_socket_until(
+    socket_path: &Path,
+    expected_peer_uid: u32,
+    request_count: usize,
+    repository: &AuditLogRepository,
+    shutdown: Option<Arc<AtomicBool>>,
+) -> Result<(), ServiceError> {
     let endpoint = UnixSocketEndpoint::bind(socket_path)?;
-    for stream in endpoint.listener().incoming().take(request_count) {
-        let mut stream = stream.map_err(|_| {
-            ServiceError::service_unavailable("audit query connection cannot be accepted")
+    if shutdown.is_some() {
+        endpoint.listener().set_nonblocking(true).map_err(|_| {
+            ServiceError::service_unavailable("audit query listener cannot enter runtime mode")
         })?;
+    }
+    let mut accepted = 0;
+    while accepted < request_count
+        && shutdown
+            .as_ref()
+            .is_none_or(|flag| !flag.load(Ordering::Acquire))
+    {
+        let mut stream = match endpoint.listener().accept() {
+            Ok((stream, _)) => stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(25));
+                continue;
+            }
+            Err(_) => {
+                return Err(ServiceError::service_unavailable(
+                    "audit query connection cannot be accepted",
+                ));
+            }
+        };
+        accepted += 1;
         let response = if peer_uid(&stream) != Some(expected_peer_uid) {
             AuditQueryResponse {
                 status: "ERROR".into(),

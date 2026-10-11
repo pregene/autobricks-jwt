@@ -4,6 +4,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::service_error::ServiceError;
+use crate::truelog_audit::AuditEvent;
 
 pub trait LogSink {
     fn write(&mut self, message: &str);
@@ -13,6 +14,8 @@ pub struct SyslogSink;
 
 impl LogSink for SyslogSink {
     fn write(&mut self, message: &str) {
+        #[cfg(target_os = "macos")]
+        eprintln!("{message}");
         let Ok(message) = CString::new(message) else {
             return;
         };
@@ -76,6 +79,22 @@ impl<S: LogSink> OperationalLogger<S> {
             client_id,
             event_at,
         }) {
+            self.sink.write(&message);
+        }
+    }
+
+    pub fn audit_event(&mut self, event: &AuditEvent) {
+        if let Ok(message) = serde_json::to_string(event) {
+            self.sink.write(&message);
+        }
+    }
+
+    pub fn lifecycle_event(&mut self, event: &str, result: &str, event_at: &str) {
+        if let Ok(message) = serde_json::to_string(&serde_json::json!({
+            "event": event,
+            "result": result,
+            "event_at": event_at
+        })) {
             self.sink.write(&message);
         }
     }

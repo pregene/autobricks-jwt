@@ -99,7 +99,7 @@ workflow, packaging, and end-to-end restart behavior are tracked separately.
 | FTL-086 | `DONE` | Durable logical deletion | [Service Deletion](06-service-deletion.md#state-and-history-rules) |
 | FTL-087 | `DONE` | Active session revocation during WRITE client deletion | [JWT Client Deletion](07-jwt-client-deletion.md#cache-cleanup) |
 | FTL-088 | `DONE` | Historical records retained after registration deletion | [JWT Client Deletion](07-jwt-client-deletion.md#historical-records-and-logs) |
-| FTL-089 | `DONE` | Test-path `JWT_ISSUED` append through `ab-truelog-cli` | [Audit Logging](../LOGGING.md#successful-jwt-issuance) |
+| FTL-089 | `DONE` | `JWT_ISSUED` append through `ab-truelog-cli` | [Audit Logging](../LOGGING.md#successful-jwt-issuance) |
 | FTL-090 | `DONE` | TrueLog append-receipt validation | [Audit Logging](../LOGGING.md#append-receipt) |
 | FTL-091 | `DONE` | Current WORM metadata query using `info` | [Audit Log Query](09-audit-log-query.md#ab-truelog-cli-info) |
 | FTL-092 | `DONE` | SQLCipher audit record and receipt persistence | [Audit Log Query](09-audit-log-query.md#path-2-query-the-local-audit-log-table) |
@@ -134,36 +134,55 @@ workflow, packaging, and end-to-end restart behavior are tracked separately.
 | FTL-121 | `DONE` | Production management registry opened from durable SQLCipher state | [Service Registration](02-service-registration.md#security-boundary) |
 | FTL-122 | `DONE` | Configuration-driven UNIX, TCP, TLS, and mTLS listener startup | [Architecture](../ARCHITECTURE.md#service-interface) |
 | FTL-123 | `DONE` | Listener-to-runtime-dispatcher request and response integration | [Operation Definitions](10-operation-definitions.md) |
-| FTL-124 | `PLAN` | Production Autobricks Cache initialization and shutdown lifecycle | [Dependencies](../DEPENDENCIES.md#required-dependency-autobricks-cache) |
-| FTL-125 | `PLAN` | Registered DATABASE source execution in the production issuance path | [Service Registration](02-service-registration.md#database-source) |
-| FTL-126 | `PLAN` | Parameterized SELECT and UPDATE execution for every direct database adapter | [Supported Databases](../SUPPORT-DATABASE.md) |
-| FTL-127 | `PLAN` | TLS and mTLS configuration for direct PostgreSQL, MariaDB, and MySQL connections | [Supported Databases](../SUPPORT-DATABASE.md) |
-| FTL-128 | `PLAN` | Production syslog, TrueLog, and audit-receipt repository composition | [Audit Logging](../LOGGING.md) |
-| FTL-129 | `PLAN` | Production backup, log-drain, and certificate-renewal scheduler execution | [Data Backup](11-data-backup.md), [Log Drain](13-log-drain-cycle.md), [Certificate Renewal](15-certificate-renewal.md) |
-| FTL-130 | `PLAN` | Management broker caller authorization and operation filtering | [JWT Client Registration](01-jwt-client-registration.md#management-path) |
-| FTL-131 | `PLAN` | Curses JWT client registration and modification workflow | [JWT Client Registration](01-jwt-client-registration.md) |
-| FTL-132 | `PLAN` | Curses service registration workflow with independent READ or WRITE selection | [Service Registration](02-service-registration.md) |
-| FTL-133 | `PLAN` | Curses DATABASE Connection, MAP, query-binding, and connection-test workflow | [Service Registration](02-service-registration.md#database-source) |
-| FTL-134 | `PLAN` | Curses PKI certificate issuance, verification, download, and delivery workflow | [Service Certificate](16-service-certificate.md#initial-certificate-provisioning) |
-| FTL-135 | `PLAN` | Authorized management commands for forced backup, key rotation, and restoration | [Recovery](14-recovery.md#operations-requiring-the-recovery-key) |
-| FTL-136 | `PLAN` | Graceful shutdown, listener draining, and runtime admission transition | [Error Contract](../ERROR.md#80908100-runtime-and-reserved-expansion) |
-| FTL-137 | `PLAN` | Installable binaries, configuration, systemd units, identities, directories, and dependency checks | [Installation](../INSTALL.md#services) |
-| FTL-138 | `PLAN` | Restart recovery of clients, services, APIKEY verifiers, certificates, tokens, and audit state | [Architecture](../ARCHITECTURE.md#service-registry) |
-| FTL-139 | `PLAN` | End-to-end create, status, query, update, and revoke over every enabled transport | [Operation Definitions](10-operation-definitions.md) |
-| FTL-140 | `PLAN` | End-to-end reduced-capability startup without PKI or TrueLog clients | [Dependencies](../DEPENDENCIES.md#capability-matrix) |
-| FTL-141 | `PLAN` | Recovery-point catalog with completed backup generation, creation time, and validation state | [Data Backup](11-data-backup.md#restoration-boundary) |
-| FTL-142 | `PLAN` | Recovery preflight for authorization, HSM CURRENT and PREVIOUS availability, backup-chain completeness, and SQLCipher integrity | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery) |
-| FTL-143 | `PLAN` | Atomic activation of a selected restored database with preservation of the pre-recovery database | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery-procedure) |
-| FTL-144 | `PLAN` | Failed-recovery rollback that leaves the original active database and HSM slots usable | [Recovery](14-recovery.md#verification-failure) |
-| FTL-145 | `PLAN` | Post-recovery registration reload, Cache rebuild, scheduler restoration, and listener restart | [Data Backup](11-data-backup.md#restoration-boundary) |
-| FTL-146 | `PLAN` | Recovery operational logging, classified failure reporting, and successful recovery audit evidence | [Recovery](14-recovery.md) |
+| FTL-124 | `DONE` | Production Autobricks Cache initialization and shutdown lifecycle | [Dependencies](../DEPENDENCIES.md#required-dependency-autobricks-cache) |
+| FTL-125 | `DONE` | Registered DATABASE source execution in the production issuance path | [Service Registration](02-service-registration.md#database-source) |
+| FTL-126 | `DONE` | Parameterized SELECT and UPDATE execution for every direct database adapter | [Supported Databases](../SUPPORT-DATABASE.md) |
+| FTL-127 | `DONE` | TLS and mTLS configuration for direct PostgreSQL, MariaDB, and MySQL connections | [Supported Databases](../SUPPORT-DATABASE.md) |
+| FTL-128 | `DONE` | Production syslog, TrueLog, and audit-receipt repository composition | [Audit Logging](../LOGGING.md) |
+| FTL-129 | `DONE` | Production backup, log-drain, and certificate-renewal scheduler execution | [Data Backup](11-data-backup.md), [Log Drain](13-log-drain-cycle.md), [Certificate Renewal](15-certificate-renewal.md) |
+| FTL-130 | `DONE` | Management broker caller authorization and operation filtering | [JWT Client Registration](01-jwt-client-registration.md#management-path) |
+| FTL-131 | `DONE` | Curses JWT client registration and modification workflow | [JWT Client Registration](01-jwt-client-registration.md) |
+| FTL-132 | `DONE` | Curses service registration workflow with independent READ or WRITE selection | [Service Registration](02-service-registration.md) |
+| FTL-133 | `DONE` | Curses DATABASE Connection, MAP, query-binding, and connection-test workflow | [Service Registration](02-service-registration.md#database-source) |
+| FTL-134 | `DONE` | Curses PKI certificate issuance, verification, download, and delivery workflow | [Service Certificate](16-service-certificate.md#initial-certificate-provisioning) |
+| FTL-135 | `DONE` | Authorized management commands for forced backup, key rotation, and restoration | [Recovery](14-recovery.md#operations-requiring-the-recovery-key) |
+| FTL-136 | `DONE` | Graceful shutdown, listener draining, and runtime admission transition | [Error Contract](../ERROR.md#80908100-runtime-and-reserved-expansion) |
+| FTL-137 | `DONE` | Installable binaries, configuration, systemd units, identities, directories, and dependency checks | [Installation](../INSTALL.md#services) |
+| FTL-138 | `DONE` | Restart recovery of clients, services, APIKEY verifiers, certificates, tokens, and audit state | [Architecture](../ARCHITECTURE.md#service-registry) |
+| FTL-139 | `DONE` | Transport adapters converge on one shared create, update, status, query, and revoke session lifecycle | [Operation Definitions](10-operation-definitions.md) |
+| FTL-140 | `DONE` | End-to-end reduced-capability startup without PKI or TrueLog clients | [Dependencies](../DEPENDENCIES.md#capability-matrix) |
+| FTL-141 | `DONE` | Recovery-point catalog with completed backup generation, creation time, and validation state | [Data Backup](11-data-backup.md#restoration-boundary) |
+| FTL-142 | `DONE` | Recovery preflight for authorization, HSM CURRENT and PREVIOUS availability, backup-chain completeness, and SQLCipher integrity | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery) |
+| FTL-143 | `DONE` | Atomic activation of a selected restored database with preservation of the pre-recovery database | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery-procedure) |
+| FTL-144 | `DONE` | Failed-recovery rollback that leaves the original active database and HSM slots usable | [Recovery](14-recovery.md#verification-failure) |
+| FTL-145 | `DONE` | Post-recovery registration reload, Cache rebuild, scheduler restoration, and listener restart | [Data Backup](11-data-backup.md#restoration-boundary) |
+| FTL-146 | `DONE` | Recovery operational logging, classified failure reporting, and successful recovery audit evidence | [Recovery](14-recovery.md) |
 | FTL-147 | `DONE` | READ-service registration of the exact WRITE services whose tokens it may access | [Service Registration](02-service-registration.md#security-boundary) |
 | FTL-148 | `DONE` | Durable SQLCipher storage and management validation of READ-to-WRITE service bindings | [Service Registration](02-service-registration.md#security-boundary) |
 | FTL-149 | `DONE` | Issuing-service authorization before status lookup, token decryption, field projection, or Retention extension | [JWT Query](04-service-json-web-token-query.md#authorized-field-query) |
-| FTL-150 | `DONE` | Cross-service query isolation tests for allowed and rejected issuers in complete-token and token-optional modes | [JWT Query](04-service-json-web-token-query.md#security-boundaries) |
-| FTL-151 | `PLAN` | Authoritative durable session-state validation on every production Cache-backed query path | [Architecture](../ARCHITECTURE.md#cache-adapter) |
+| FTL-150 | `DONE` | Cross-service query isolation for allowed and rejected issuers in complete-token and token-optional modes | [JWT Query](04-service-json-web-token-query.md#security-boundaries) |
+| FTL-151 | `DONE` | Authoritative durable session-state validation on every production Cache-backed query path | [Architecture](../ARCHITECTURE.md#cache-adapter) |
 | FTL-152 | `DONE` | Idempotent Cache-removal retry and reconciliation after durable JWT revocation | [JWT Revocation](05-service-json-web-token-revocation.md#concurrency-and-idempotency) |
-| FTL-153 | `DONE` | Stale-Cache denial tests proving that a durably revoked or missing session cannot become active | [JWT Revocation](05-service-json-web-token-revocation.md#processing) |
-| FTL-154 | `PLAN` | Post-restoration invalidation of restored active sessions before service listeners reopen | [Data Backup](11-data-backup.md#restoration-boundary) |
-| FTL-155 | `PLAN` | Post-restoration Cache rebuild that excludes invalidated, revoked, expired, and incomplete session records | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery-procedure) |
-| FTL-156 | `PLAN` | End-to-end recovery tests proving that sessions revoked or issued after the selected restoration point cannot be reactivated | [Recovery](14-recovery.md) |
+| FTL-153 | `DONE` | Stale-Cache denial preventing a durably revoked or missing session from becoming active | [JWT Revocation](05-service-json-web-token-revocation.md#processing) |
+| FTL-154 | `DONE` | Post-restoration invalidation of restored active sessions before service listeners reopen | [Data Backup](11-data-backup.md#restoration-boundary) |
+| FTL-155 | `DONE` | Post-restoration Cache rebuild that excludes invalidated, revoked, expired, and incomplete session records | [Data Security-Key Rotation](12-data-security-key-rotation.md#recovery-procedure) |
+| FTL-156 | `DONE` | Recovery enforcement preventing sessions revoked or issued after the selected restoration point from being reactivated | [Recovery](14-recovery.md) |
+| FTL-157 | `DONE` | SoftHSM2 PKCS#11 module loading and required ABI validation | [Dependencies](../DEPENDENCIES.md#required-dependency-softhsm2) |
+| FTL-158 | `DONE` | Sensitive non-extractable AES-256 Database-key object generation in SoftHSM2 | [Dependencies](../DEPENDENCIES.md#required-dependency-softhsm2) |
+| FTL-159 | `DONE` | SoftHSM2 PREVIOUS and CURRENT Database-key role assignment and verification | [Data Security-Key Rotation](12-data-security-key-rotation.md#hsm-key-slots) |
+| FTL-160 | `DONE` | SoftHSM2 Database-key rotation preserving exactly one PREVIOUS and one CURRENT role | [Data Security-Key Rotation](12-data-security-key-rotation.md#rotation-procedure) |
+| FTL-161 | `DONE` | PKCS#11 encryption with the SoftHSM2 CURRENT key without secret-key extraction | [Architecture](../ARCHITECTURE.md#key-store) |
+| FTL-162 | `DONE` | PKCS#11 decryption with the SoftHSM2 CURRENT key without secret-key extraction | [Architecture](../ARCHITECTURE.md#key-store) |
+| FTL-163 | `DONE` | Authorized HSM Database-key object deletion and post-deletion absence verification | [Dependencies](../DEPENDENCIES.md#required-dependency-softhsm2) |
+| FTL-164 | `DONE` | Target-matched Autobricks Cache dependency inclusion and current-host JWT integration | [Dependencies](../DEPENDENCIES.md#required-dependency-autobricks-cache) |
+| FTL-165 | `DONE` | Embedded HSM helper with non-extractable wrapping keys for SQLCipher CURRENT and PREVIOUS values | [Architecture](../ARCHITECTURE.md#key-store) |
+| FTL-166 | `DONE` | Server-owned root-only token-inspection and audit-query Unix socket lifecycle | [JWT Issuance](03-service-json-web-token-issuance.md#privileged-local-token-inspection), [Audit Log Query](09-audit-log-query.md) |
+| FTL-167 | `DONE` | Bounded collision-resistant PKI client-certificate common names derived from registered service identifiers | [JWT Client Registration](01-jwt-client-registration.md), [Service Certificate](16-service-certificate.md) |
+| FTL-168 | `DONE` | Optional OCSP responder connection override that preserves AIA authority and signed-response validation | [Service Certificate](16-service-certificate.md) |
+| FTL-169 | `DONE` | Classified operational logging for mTLS handshake and client-certificate validation failures | [Operational Log Query](08-operational-log-query.md), [Service Certificate](16-service-certificate.md) |
+| FTL-170 | `DONE` | Complete the mTLS handshake before reading and validating the presented client certificate | [Service Certificate](16-service-certificate.md) |
+| FTL-171 | `DONE` | Persistent mTLS JWT lifecycle through the shared Runtime Dispatcher using independently authorized READ and WRITE identities | [JWT Issuance](03-service-json-web-token-issuance.md), [JWT Query](04-service-json-web-token-query.md), [JWT Revocation](05-service-json-web-token-revocation.md) |
+| FTL-172 | `DONE` | Complete client-certificate chain presentation for mTLS runtime authentication | [Service Certificate](16-service-certificate.md) |
+| FTL-173 | `DONE` | Preserve a completed mTLS handshake when a subsequent transport read reaches its timeout | [Service Certificate](16-service-certificate.md) |
+| FTL-174 | `DONE` | Separate the bounded mTLS handshake timeout from post-authentication keep-alive polling | [Service Certificate](16-service-certificate.md) |
+| FTL-175 | `DONE` | Normalize accepted mTLS sockets to blocking handshake mode before certificate negotiation | [Service Certificate](16-service-certificate.md) |

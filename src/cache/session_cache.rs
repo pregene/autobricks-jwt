@@ -5,6 +5,8 @@ use crate::{autobricks_cache::AutobricksCache, service_error::ServiceError};
 
 pub trait SessionCache {
     fn insert(&mut self, token_id: Uuid, token: &str, expires_at: u64) -> Result<(), ServiceError>;
+    fn replace(&mut self, token_id: Uuid, token: &str, expires_at: u64)
+    -> Result<(), ServiceError>;
     fn touch(&mut self, token_id: Uuid) -> Result<(), ServiceError>;
     fn remove(&mut self, token_id: Uuid) -> Result<(), ServiceError>;
 }
@@ -26,6 +28,22 @@ impl<'a> AutobricksSessionCache<'a> {
 impl SessionCache for AutobricksSessionCache<'_> {
     fn insert(&mut self, token_id: Uuid, token: &str, expires_at: u64) -> Result<(), ServiceError> {
         self.cache.insert(
+            &self.cache_id,
+            &json!({
+                "token_id": token_id,
+                "token": token,
+                "expires_at": expires_at
+            }),
+        )
+    }
+
+    fn replace(
+        &mut self,
+        token_id: Uuid,
+        token: &str,
+        expires_at: u64,
+    ) -> Result<(), ServiceError> {
+        self.cache.update(
             &self.cache_id,
             &json!({
                 "token_id": token_id,
@@ -64,6 +82,7 @@ pub(crate) mod tests {
         pub(crate) inserted: Vec<Uuid>,
         pub(crate) touched: Vec<Uuid>,
         pub(crate) removed: Vec<Uuid>,
+        pub(crate) replaced: Vec<Uuid>,
         pub(crate) fail_remove_count: usize,
     }
 
@@ -80,6 +99,16 @@ pub(crate) mod tests {
 
         fn touch(&mut self, token_id: Uuid) -> Result<(), ServiceError> {
             self.touched.push(token_id);
+            Ok(())
+        }
+
+        fn replace(
+            &mut self,
+            token_id: Uuid,
+            _token: &str,
+            _expires_at: u64,
+        ) -> Result<(), ServiceError> {
+            self.replaced.push(token_id);
             Ok(())
         }
 

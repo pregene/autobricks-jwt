@@ -159,6 +159,22 @@ impl DatabaseSourcePlan {
         )
     }
 
+    pub fn cache_runtime_definition(&self) -> Value {
+        let mut definition = self.cache_definition_json.clone();
+        for operation in ["insert", "delete"] {
+            if definition[operation]["query"]
+                .as_str()
+                .is_none_or(str::is_empty)
+            {
+                definition[operation] = json!({
+                    "query": "SELECT 1 WHERE FALSE",
+                    "fields": []
+                });
+            }
+        }
+        definition
+    }
+
     pub fn load_subject<C: DatabaseSourceCache>(
         &self,
         cache: &C,
@@ -346,6 +362,17 @@ mod tests {
                 json!(["last_ip", "user_id"])
             );
         }
+    }
+
+    #[test]
+    fn adapts_forbidden_mutations_to_non_mutating_cache_runtime_statements() {
+        let plan = DatabaseSourcePlan::build(input(DatabaseTlsMode::Disabled)).unwrap();
+        assert_eq!(plan.cache_definition_json["insert"]["query"], "");
+        assert_eq!(plan.cache_definition_json["delete"]["query"], "");
+        let runtime = plan.cache_runtime_definition();
+        assert_eq!(runtime["insert"]["query"], "SELECT 1 WHERE FALSE");
+        assert_eq!(runtime["delete"]["query"], "SELECT 1 WHERE FALSE");
+        assert_eq!(runtime["update"], plan.cache_definition_json["update"]);
     }
 
     #[test]

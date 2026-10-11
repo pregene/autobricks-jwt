@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::ExitCode};
+use std::{fs, io::Write, os::unix::fs::OpenOptionsExt, path::PathBuf, process::ExitCode};
 
 use autobricks_jwt::{
     VERSION,
@@ -70,7 +70,34 @@ fn run() -> Result<String, String> {
         [command, socket, json] if command == "request" => {
             let request: ManagementRequest = serde_json::from_str(json)
                 .map_err(|error| format!("management request JSON is invalid: {error}"))?;
-            let response = management_service::request(&PathBuf::from(socket), &request)?;
+            let (mut response, attachment) =
+                management_service::request_with_attachment(&PathBuf::from(socket), &request)?;
+            if let Some(attachment) = attachment {
+                let path = std::env::current_dir()
+                    .map_err(|_| "invocation directory is unavailable")?
+                    .join(&attachment.file_name);
+                let mut file = fs::OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .mode(0o600)
+                    .open(&path)
+                    .map_err(
+                        |_| "certificate package cannot be created in the invocation directory",
+                    )?;
+                file.write_all(&attachment.bytes)
+                    .and_then(|_| file.sync_all())
+                    .map_err(|_| "certificate package cannot be written")?;
+                if let Some(result) = response
+                    .result
+                    .as_mut()
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    result.insert(
+                        "certificate_package".into(),
+                        serde_json::Value::String(path.to_string_lossy().into_owned()),
+                    );
+                }
+            }
             serde_json::to_string_pretty(&response)
                 .map_err(|error| format!("management response serialization failed: {error}"))
         }

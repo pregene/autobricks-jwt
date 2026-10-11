@@ -7,6 +7,24 @@
 | `ab-jwtd` | Autobricks JWT server program |
 | `ab-jwt-cli` | Management client for JWT client registration, modification, and deletion |
 
+## Package Targets
+
+Autobricks JWT is packaged independently for six operating-system and
+architecture targets:
+
+| Operating system | Architecture | Cache runtime dependency |
+| --- | --- | --- |
+| macOS | ARM64 | `libautobricks_cache.dylib` for macOS ARM64 |
+| macOS | x86_64 | `libautobricks_cache.dylib` for macOS x86_64 |
+| Ubuntu 22.04 | ARM64 | `libautobricks_cache.so` for Ubuntu 22.04 ARM64 |
+| Ubuntu 22.04 | AMD64 | `libautobricks_cache.so` for Ubuntu 22.04 AMD64 |
+| Ubuntu 24.04 | ARM64 | `libautobricks_cache.so` for Ubuntu 24.04 ARM64 |
+| Ubuntu 24.04 | AMD64 | `libautobricks_cache.so` for Ubuntu 24.04 AMD64 |
+
+Each package contains only the `ab-jwtd`, `ab-jwt-cli`, and Autobricks Cache
+library built for that exact target. Libraries are never shared across package
+targets.
+
 The interactive `ab-jwt-cli` process connects to the local socket owned by
 `autobricks-jwt-cli.service`. The client service authenticates the local caller,
 validates and filters the management request, and forwards an authorized

@@ -1,8 +1,8 @@
 use std::{
     fs::{self, DirBuilder, Permissions},
     os::unix::{
-        fs::{DirBuilderExt, MetadataExt, PermissionsExt},
-        net::UnixListener,
+        fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt},
+        net::{UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
 };
@@ -41,12 +41,20 @@ impl UnixSocketEndpoint {
         };
 
         if path.exists() {
-            if created_parent {
-                let _ = fs::remove_dir(parent);
+            let metadata = fs::symlink_metadata(path).map_err(|_| {
+                ServiceError::service_unavailable("Unix socket path cannot be inspected")
+            })?;
+            if !metadata.file_type().is_socket() || UnixStream::connect(path).is_ok() {
+                if created_parent {
+                    let _ = fs::remove_dir(parent);
+                }
+                return Err(ServiceError::service_unavailable(
+                    "Unix socket path is already in use",
+                ));
             }
-            return Err(ServiceError::service_unavailable(
-                "Unix socket path is already in use",
-            ));
+            fs::remove_file(path).map_err(|_| {
+                ServiceError::service_unavailable("stale Unix socket cannot be removed")
+            })?;
         }
 
         let listener = match UnixListener::bind(path) {
@@ -83,6 +91,42 @@ impl UnixSocketEndpoint {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn peer_credentials(
+        stream: &std::os::unix::net::UnixStream,
+    ) -> Result<(u32, u32), ServiceError> {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            let mut uid: libc::uid_t = 0;
+            let mut gid: libc::gid_t = 0;
+            if libc::getpeereid(std::os::fd::AsRawFd::as_raw_fd(stream), &mut uid, &mut gid) != 0 {
+                return Err(
+                    ServiceError::classified(8023, "Unix peer identity is unavailable")
+                        .expect("assigned error"),
+                );
+            }
+            Ok((uid, gid))
+        }
+        #[cfg(target_os = "linux")]
+        unsafe {
+            let mut credentials: libc::ucred = std::mem::zeroed();
+            let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+            if libc::getsockopt(
+                std::os::fd::AsRawFd::as_raw_fd(stream),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                (&mut credentials as *mut libc::ucred).cast(),
+                &mut length,
+            ) != 0
+            {
+                return Err(
+                    ServiceError::classified(8023, "Unix peer identity is unavailable")
+                        .expect("assigned error"),
+                );
+            }
+            Ok((credentials.uid, credentials.gid))
+        }
     }
 }
 

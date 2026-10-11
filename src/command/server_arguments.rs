@@ -7,8 +7,11 @@ pub enum ServerCommand {
     Help,
     Version,
     CheckConfiguration(PathBuf),
+    Initialize(PathBuf),
     Serve(PathBuf),
     ManagementTestServer(PathBuf, usize),
+    CacheWorker,
+    HsmHelper,
 }
 
 pub fn parse<I>(arguments: I) -> Result<ServerCommand, ServiceError>
@@ -21,6 +24,8 @@ where
         [] => Ok(ServerCommand::Help),
         [flag] if flag == "-h" || flag == "--help" => Ok(ServerCommand::Help),
         [flag] if flag == "-V" || flag == "--version" => Ok(ServerCommand::Version),
+        [flag] if flag == "--cache-worker" => Ok(ServerCommand::CacheWorker),
+        [flag] if flag == "--hsm-helper" => Ok(ServerCommand::HsmHelper),
         [flag, path] if flag == "--check-config" => {
             if path.is_empty() {
                 return Err(ServiceError::configuration_invalid(
@@ -36,6 +41,14 @@ where
                 ));
             }
             Ok(ServerCommand::Serve(PathBuf::from(path)))
+        }
+        [flag, path] if flag == "--initialize" => {
+            if path.is_empty() {
+                return Err(ServiceError::configuration_invalid(
+                    "configuration path is empty",
+                ));
+            }
+            Ok(ServerCommand::Initialize(PathBuf::from(path)))
         }
         [flag, path, request_count] if flag == "--management-test-server" => {
             let request_count = request_count

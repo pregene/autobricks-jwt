@@ -8,6 +8,7 @@ use crate::{jwe_token::IssuedToken, service_error::ServiceError};
 
 pub struct SqlCipherTokenRepository {
     connection: Connection,
+    path: std::path::PathBuf,
 }
 
 pub struct ActiveTokenRecord {
@@ -68,7 +69,14 @@ impl SqlCipherTokenRepository {
                 );",
             )
             .map_err(database_error)?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub fn database_path(&self) -> std::path::PathBuf {
+        self.path.clone()
     }
 
     pub fn store_issued(
@@ -125,6 +133,36 @@ impl SqlCipherTokenRepository {
         Ok(self
             .load_active_record(token_id)?
             .map(|record| record.token))
+    }
+
+    pub fn cache_rebuild_records(&self, now: u64) -> Result<Vec<IssuedToken>, ServiceError> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT DISTINCT v.token_id
+                   FROM token_versions v
+                   JOIN token_keys k ON k.kid = v.kid
+                  WHERE v.status = 'ACTIVE' AND k.status = 'ACTIVE' AND v.expires_at > ?1
+                  ORDER BY v.token_id",
+            )
+            .map_err(database_error)?;
+        let identifiers = statement
+            .query_map([integer_time(now)?], |row| row.get::<_, String>(0))
+            .map_err(database_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(database_error)?;
+        drop(statement);
+
+        let mut records = Vec::new();
+        for identifier in identifiers {
+            let Ok(token_id) = Uuid::parse_str(&identifier) else {
+                continue;
+            };
+            if let Ok(Some(token)) = self.load_active(token_id) {
+                records.push(token);
+            }
+        }
+        Ok(records)
     }
 
     pub fn load_active_record(
@@ -600,6 +638,39 @@ mod tests {
             .store_issued(client_id, Uuid::new_v4(), request_id, &issue())
             .unwrap_err();
         assert_eq!(duplicate.code(), 8080);
+        drop(repository);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cache_rebuild_includes_only_complete_unexpired_active_records() {
+        let path = std::env::temp_dir().join(format!("ab-jwt-rebuild-{}.db", Uuid::new_v4()));
+        let database_key = [0x52; 32];
+        let mut repository = SqlCipherTokenRepository::open(&path, &database_key).unwrap();
+        let valid = issue();
+        let expired = IssuedToken::issue(
+            "autobricks-jwt",
+            "service-1",
+            "expired-user",
+            Map::new(),
+            100,
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        let revoked = issue();
+        let damaged = issue();
+        for token in [&valid, &expired, &revoked, &damaged] {
+            repository
+                .store_issued(Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), token)
+                .unwrap();
+        }
+        repository.revoke_active(revoked.token_id).unwrap();
+        repository.tamper_token(damaged.token_id);
+
+        let records = repository.cache_rebuild_records(1_100).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].token_id, valid.token_id);
+
         drop(repository);
         fs::remove_file(path).unwrap();
     }

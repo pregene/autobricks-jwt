@@ -582,6 +582,13 @@ impl ServiceRegistry {
             .collect()
     }
 
+    pub fn all_services(&self) -> Vec<ServiceSummary> {
+        self.clients
+            .keys()
+            .flat_map(|client_id| self.services(*client_id))
+            .collect()
+    }
+
     pub fn authorize(
         &self,
         client_id: Uuid,

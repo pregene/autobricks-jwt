@@ -83,7 +83,7 @@ impl ConnectionPolicy {
 }
 
 impl ConnectionLease {
-    pub fn begin_request(&mut self, now: u64) -> Result<(), ServiceError> {
+    pub fn ensure_open(&self, now: u64) -> Result<(), ServiceError> {
         if now.saturating_sub(self.last_activity_at) >= self.policy.idle_timeout {
             return Err(classified(8024, "connection idle timeout expired"));
         }
@@ -96,6 +96,11 @@ impl ConnectionLease {
         {
             return Err(classified(8026, "certificate connection deadline reached"));
         }
+        Ok(())
+    }
+
+    pub fn begin_request(&mut self, now: u64) -> Result<(), ServiceError> {
+        self.ensure_open(now)?;
         self.last_activity_at = now;
         Ok(())
     }

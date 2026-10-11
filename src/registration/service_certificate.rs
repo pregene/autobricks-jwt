@@ -21,10 +21,27 @@ pub struct CertificateMetadata {
     pub client_auth: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ServerCertificateMetadata {
+    pub fingerprint: String,
+    pub subject_alt_names: Vec<String>,
+    pub ocsp_url: String,
+    pub not_after: String,
+}
+
+#[derive(Clone)]
 pub struct CertificateTools {
     openssl: PathBuf,
     abpki_cli: PathBuf,
     ocsp_responder_override: Option<String>,
+}
+
+pub struct RuntimeCertificateValidation {
+    certificate_path: PathBuf,
+    issuer_chain: PathBuf,
+    tools: CertificateTools,
+    metadata: CertificateMetadata,
+    not_after_unix: u64,
 }
 
 pub struct ServiceCertificateRepository {
@@ -34,6 +51,14 @@ pub struct ServiceCertificateRepository {
 #[derive(Debug)]
 pub struct CertificateHandover {
     pub pending_certificate_id: Uuid,
+    pub registration_key: String,
+    pub expires_at: u64,
+}
+
+#[derive(Debug)]
+pub struct InitialCertificateRegistration {
+    pub certificate_id: Uuid,
+    pub request_id: Uuid,
     pub registration_key: String,
     pub expires_at: u64,
 }
@@ -50,6 +75,58 @@ impl CertificateTools {
     pub fn with_ocsp_responder_override(mut self, url: impl Into<String>) -> Self {
         self.ocsp_responder_override = Some(url.into());
         self
+    }
+
+    pub fn prepare_runtime_validation(
+        &self,
+        certificate_der: &[u8],
+        issuer_chain: &Path,
+        now: u64,
+    ) -> Result<RuntimeCertificateValidation, ServiceError> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let certificate = openssl::x509::X509::from_der(certificate_der)
+            .map_err(|_| classified(8011, "client certificate is invalid"))?;
+        let path = std::env::temp_dir().join(format!("ab-jwt-peer-{}.pem", Uuid::new_v4()));
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|_| classified(8011, "client certificate cannot be inspected"))?;
+        use std::io::Write;
+        file.write_all(
+            &certificate
+                .to_pem()
+                .map_err(|_| classified(8011, "client certificate is invalid"))?,
+        )
+        .map_err(|_| classified(8011, "client certificate cannot be inspected"))?;
+        drop(file);
+        let prepared = (|| {
+            let metadata = self.inspect(&path)?;
+            self.require_aia_ocsp_good(&path, issuer_chain, &metadata)?;
+            let current = openssl::asn1::Asn1Time::from_unix(now as i64)
+                .map_err(|_| classified(8012, "certificate time cannot be evaluated"))?;
+            let remaining = current
+                .diff(certificate.not_after())
+                .map_err(|_| classified(8012, "certificate time cannot be evaluated"))?;
+            if remaining.days < 0 || remaining.secs < 0 {
+                return Err(classified(8012, "certificate is outside its valid time"));
+            }
+            let seconds = (remaining.days as u64)
+                .saturating_mul(86_400)
+                .saturating_add(remaining.secs as u64);
+            Ok(RuntimeCertificateValidation {
+                certificate_path: path.clone(),
+                issuer_chain: issuer_chain.to_path_buf(),
+                tools: self.clone(),
+                metadata,
+                not_after_unix: now.saturating_add(seconds),
+            })
+        })();
+        if prepared.is_err() {
+            let _ = std::fs::remove_file(&path);
+        }
+        prepared
     }
 
     pub fn inspect(&self, certificate: &Path) -> Result<CertificateMetadata, ServiceError> {
@@ -111,6 +188,65 @@ impl CertificateTools {
             not_before,
             not_after,
             client_auth,
+        })
+    }
+
+    pub fn inspect_server(
+        &self,
+        certificate: &Path,
+    ) -> Result<ServerCertificateMetadata, ServiceError> {
+        let fingerprint = self
+            .openssl(certificate, &["-fingerprint", "-sha256"])?
+            .split_once('=')
+            .map(|(_, value)| value.trim().replace(':', "").to_ascii_lowercase())
+            .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .ok_or_else(|| classified(8011, "certificate fingerprint is invalid"))?;
+        let san = self.openssl(certificate, &["-ext", "subjectAltName"])?;
+        let subject_alt_names = san
+            .lines()
+            .skip(1)
+            .flat_map(|line| line.split(','))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if subject_alt_names.is_empty() {
+            return Err(classified(8011, "server certificate SAN is missing"));
+        }
+        let ocsp_url = self.openssl(certificate, &["-ocsp_uri"])?.trim().to_owned();
+        if !(ocsp_url.starts_with("https://") || ocsp_url.starts_with("http://")) {
+            return Err(classified(8014, "certificate AIA OCSP URL is missing"));
+        }
+        let dates = self.openssl(certificate, &["-dates"])?;
+        let not_after = dates
+            .lines()
+            .find_map(|line| line.strip_prefix("notAfter="))
+            .ok_or_else(|| classified(8012, "certificate notAfter is missing"))?
+            .to_owned();
+        let purpose = self.openssl(certificate, &["-purpose"])?;
+        if !purpose
+            .lines()
+            .any(|line| line.trim() == "SSL server : Yes")
+        {
+            return Err(classified(
+                8013,
+                "certificate server-auth purpose is invalid",
+            ));
+        }
+        let valid = Command::new(&self.openssl)
+            .args(["x509", "-in"])
+            .arg(certificate)
+            .args(["-noout", "-checkend", "0"])
+            .status()
+            .map_err(|_| classified(8012, "certificate validity cannot be checked"))?;
+        if !valid.success() {
+            return Err(classified(8012, "certificate is outside its valid time"));
+        }
+        Ok(ServerCertificateMetadata {
+            fingerprint,
+            subject_alt_names,
+            ocsp_url,
+            not_after,
         })
     }
 
@@ -190,6 +326,44 @@ impl CertificateTools {
         }
     }
 
+    pub fn require_server_aia_ocsp_good(
+        &self,
+        certificate: &Path,
+        issuer_chain: &Path,
+        metadata: &ServerCertificateMetadata,
+    ) -> Result<(), ServiceError> {
+        self.require_aia_ocsp_good(
+            certificate,
+            issuer_chain,
+            &CertificateMetadata {
+                fingerprint: metadata.fingerprint.clone(),
+                uri_sans: Vec::new(),
+                ocsp_url: metadata.ocsp_url.clone(),
+                not_before: String::new(),
+                not_after: metadata.not_after.clone(),
+                client_auth: false,
+            },
+        )
+    }
+
+    pub fn require_trusted_chain(
+        &self,
+        certificate: &Path,
+        issuer_chain: &Path,
+    ) -> Result<(), ServiceError> {
+        let status = Command::new(&self.openssl)
+            .args(["verify", "-CAfile"])
+            .arg(issuer_chain)
+            .arg(certificate)
+            .status()
+            .map_err(|_| classified(8010, "certificate trust cannot be verified"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(classified(8010, "certificate chain is untrusted"))
+        }
+    }
+
     fn openssl(&self, certificate: &Path, arguments: &[&str]) -> Result<String, ServiceError> {
         let output = Command::new(&self.openssl)
             .args(["x509", "-in"])
@@ -203,6 +377,27 @@ impl CertificateTools {
         }
         String::from_utf8(output.stdout)
             .map_err(|_| classified(8011, "certificate output is invalid"))
+    }
+}
+
+impl RuntimeCertificateValidation {
+    pub fn identity(&self) -> crate::runtime_context::PresentedCertificateIdentity {
+        crate::runtime_context::PresentedCertificateIdentity {
+            fingerprint: self.metadata.fingerprint.clone(),
+            uri_san: self.metadata.uri_sans.first().cloned().unwrap_or_default(),
+            not_after: self.not_after_unix,
+        }
+    }
+
+    pub fn revalidate(&self) -> Result<(), ServiceError> {
+        self.tools
+            .require_aia_ocsp_good(&self.certificate_path, &self.issuer_chain, &self.metadata)
+    }
+}
+
+impl Drop for RuntimeCertificateValidation {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.certificate_path);
     }
 }
 
@@ -254,6 +449,16 @@ impl ServiceCertificateRepository {
                 key_verifier BLOB NOT NULL CHECK(length(key_verifier) = 32),
                 expires_at INTEGER NOT NULL,
                 consumed_at INTEGER
+            );
+            CREATE TABLE IF NOT EXISTS certificate_initializations (
+                request_id TEXT PRIMARY KEY,
+                service_id TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                operation_class TEXT NOT NULL,
+                fingerprint TEXT NOT NULL UNIQUE,
+                key_verifier BLOB NOT NULL CHECK(length(key_verifier) = 32),
+                expires_at INTEGER NOT NULL,
+                consumed_at INTEGER
             );",
             )
             .map_err(database_error)?;
@@ -295,6 +500,122 @@ impl ServiceCertificateRepository {
             )
             .map_err(database_error)?;
         Ok(certificate_id)
+    }
+
+    pub fn begin_initial_registration(
+        &mut self,
+        service_id: Uuid,
+        client_id: Uuid,
+        operation: OperationClass,
+        metadata: &CertificateMetadata,
+        now: u64,
+        timeout_seconds: u64,
+    ) -> Result<InitialCertificateRegistration, ServiceError> {
+        if timeout_seconds == 0
+            || metadata.uri_sans.as_slice() != [expected_uri(operation)]
+            || !metadata.client_auth
+        {
+            return Err(classified(8027, "certificate registration is invalid"));
+        }
+        let expires_at = now
+            .checked_add(timeout_seconds)
+            .ok_or_else(|| classified(8027, "certificate registration expiration is invalid"))?;
+        let mut key = [0u8; 32];
+        getrandom::fill(&mut key)
+            .map_err(|_| classified(8029, "certificate registration key generation failed"))?;
+        let registration_key = key.iter().map(|byte| format!("{byte:02x}")).collect();
+        let verifier = digest(&SHA256, &key);
+        key.fill(0);
+        let certificate_id = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+        let transaction = self.connection.transaction().map_err(database_error)?;
+        transaction
+            .execute(
+                "INSERT INTO service_certificates (
+                certificate_id, service_id, client_id, fingerprint, operation_class,
+                uri_san, ocsp_url, not_before, not_after, status
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'PENDING')",
+                params![
+                    certificate_id.to_string(),
+                    service_id.to_string(),
+                    client_id.to_string(),
+                    metadata.fingerprint,
+                    operation_name(operation),
+                    expected_uri(operation),
+                    metadata.ocsp_url,
+                    metadata.not_before,
+                    metadata.not_after
+                ],
+            )
+            .map_err(database_error)?;
+        transaction.execute(
+            "INSERT INTO certificate_initializations (
+                request_id, service_id, client_id, operation_class, fingerprint, key_verifier, expires_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![request_id.to_string(), service_id.to_string(), client_id.to_string(), operation_name(operation),
+                metadata.fingerprint, verifier.as_ref(), i64::try_from(expires_at).map_err(|_| classified(8027, "certificate registration expiration is invalid"))?],
+        ).map_err(database_error)?;
+        transaction.commit().map_err(database_error)?;
+        Ok(InitialCertificateRegistration {
+            certificate_id,
+            request_id,
+            registration_key,
+            expires_at,
+        })
+    }
+
+    pub fn activate_initial_registration(
+        &mut self,
+        service_id: Uuid,
+        client_id: Uuid,
+        operation: OperationClass,
+        request_id: Uuid,
+        fingerprint: &str,
+        registration_key: &str,
+        now: u64,
+    ) -> Result<(), ServiceError> {
+        let submitted = decode_key(registration_key)
+            .ok_or_else(|| classified(8027, "certificate registration key is invalid"))?;
+        let row: Option<(String, String, String, String, Vec<u8>, i64, Option<i64>)> = self.connection.query_row(
+            "SELECT service_id, client_id, operation_class, fingerprint, key_verifier, expires_at, consumed_at
+             FROM certificate_initializations WHERE request_id = ?1", [request_id.to_string()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
+            }).optional().map_err(database_error)?;
+        let Some((
+            stored_service,
+            stored_client,
+            stored_operation,
+            stored_fingerprint,
+            verifier,
+            expires_at,
+            consumed_at,
+        )) = row
+        else {
+            return Err(classified(8027, "certificate registration key is invalid"));
+        };
+        let candidate = digest(&SHA256, &submitted);
+        if stored_service != service_id.to_string()
+            || stored_client != client_id.to_string()
+            || stored_operation != operation_name(operation)
+            || stored_fingerprint != fingerprint
+            || consumed_at.is_some()
+            || now > u64::try_from(expires_at).unwrap_or(0)
+            || !constant_time_equal(&verifier, candidate.as_ref())
+        {
+            return Err(classified(8027, "certificate registration key is invalid"));
+        }
+        let transaction = self.connection.transaction().map_err(database_error)?;
+        let changed = transaction.execute(
+            "UPDATE service_certificates SET status = 'ACTIVE' WHERE service_id = ?1 AND fingerprint = ?2 AND status = 'PENDING'",
+            params![service_id.to_string(), fingerprint],
+        ).map_err(database_error)?;
+        if changed != 1 {
+            return Err(classified(8029, "certificate activation failed"));
+        }
+        transaction.execute("UPDATE certificate_initializations SET consumed_at = ?2 WHERE request_id = ?1 AND consumed_at IS NULL",
+            params![request_id.to_string(), i64::try_from(now).map_err(|_| classified(8027, "certificate activation time is invalid"))?])
+            .map_err(database_error)?;
+        transaction.commit().map_err(database_error)
     }
 
     pub fn authorize(
@@ -621,6 +942,73 @@ mod tests {
                 .unwrap_err()
                 .code(),
             8021
+        );
+        drop(repository);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn initial_certificate_stays_pending_until_single_use_mtls_proof_is_accepted() {
+        let path = std::env::temp_dir().join(format!("ab-jwt-cert-initial-{}.db", Uuid::new_v4()));
+        let mut repository = ServiceCertificateRepository::open(&path, &[0xe7; 32]).unwrap();
+        let service_id = Uuid::new_v4();
+        let client_id = Uuid::new_v4();
+        let certificate = metadata("urn:autobricks:jwt:write");
+        let pending = repository
+            .begin_initial_registration(
+                service_id,
+                client_id,
+                OperationClass::Write,
+                &certificate,
+                1_000,
+                300,
+            )
+            .unwrap();
+        assert_eq!(
+            repository
+                .authorize(
+                    service_id,
+                    client_id,
+                    OperationClass::Write,
+                    &certificate.fingerprint
+                )
+                .unwrap_err()
+                .code(),
+            8019
+        );
+        repository
+            .activate_initial_registration(
+                service_id,
+                client_id,
+                OperationClass::Write,
+                pending.request_id,
+                &certificate.fingerprint,
+                &pending.registration_key,
+                1_100,
+            )
+            .unwrap();
+        repository
+            .authorize(
+                service_id,
+                client_id,
+                OperationClass::Write,
+                &certificate.fingerprint,
+            )
+            .unwrap();
+        assert_eq!(
+            repository
+                .activate_initial_registration(
+                    service_id,
+                    client_id,
+                    OperationClass::Write,
+                    pending.request_id,
+                    &certificate.fingerprint,
+                    &pending.registration_key,
+                    1_101,
+                )
+                .unwrap_err()
+                .code(),
+            8027
         );
         drop(repository);
         fs::remove_file(path).unwrap();

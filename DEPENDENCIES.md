@@ -12,6 +12,9 @@ The Autobricks Cache shared library is a mandatory runtime dependency. Autobrick
 
 The Autobricks JWT installation package installs the currently validated Autobricks Cache shared-library version by default. This provides a compatible library during a normal JWT installation without requiring a separate Cache installation step.
 
+Each Autobricks JWT package includes the validated Autobricks Cache shared
+library supplied for the same operating system and architecture.
+
 For a separate installation or update, download and install the latest compatible release from the official [Autobricks Cache repository](https://github.com/pregene/autobricks-cache). Verify the release checksum and platform architecture before installation.
 
 Required behavior:
@@ -22,9 +25,32 @@ Required behavior:
 - Record the loaded Autobricks Cache version in startup syslog without logging Cache data or database credentials.
 - Validate compatibility before upgrading the shared library independently of Autobricks JWT.
 
+## Required Dependency: SoftHSM2
+
+SoftHSM2 and its PKCS#11 module are mandatory runtime dependencies for the
+standard Autobricks JWT package. The module protects the SQLCipher Database-key
+objects used by the service. Installation must provide `softhsm2-util`, a
+PKCS#11 client such as `pkcs11-tool`, and a loadable `libsofthsm2` module.
+
+Required behavior:
+
+- Load the configured PKCS#11 module before opening the protected Database.
+- Generate sensitive, non-extractable AES-256 key objects inside the HSM token.
+- Maintain exactly one `CURRENT` Database-key role and, after rotation, one
+  `PREVIOUS` role.
+- Perform required cryptographic operations without exporting the secret-key
+  material.
+- Refuse protected Database startup when the configured HSM token, role object,
+  or PKCS#11 operation is unavailable.
+- Restrict token files, PIN material, configuration, and administrative HSM
+  operations to the JWT Service identity.
+- Remove decommissioned Database-key objects through an authorized HSM
+  lifecycle operation and confirm that the objects are no longer present.
+
 ## Capability Matrix
 
-The matrix below assumes that the required Autobricks Cache shared library is installed and valid.
+The matrix below assumes that the required Autobricks Cache shared library and
+SoftHSM2 PKCS#11 module are installed, configured, and valid.
 
 | Autobricks PKI client | Autobricks TrueLog client | Available transports | Audit behavior |
 | --- | --- | --- | --- |
@@ -93,10 +119,12 @@ Use this order for a deployment that requires encrypted authenticated transport 
 2. Verify PKI server connectivity and certificate operations.
 3. Install and configure the Autobricks TrueLog client.
 4. Verify an mTLS TrueLog write and receipt from the JWT Service host.
-5. Install Autobricks JWT and its packaged Autobricks Cache shared library.
-6. Verify the Autobricks Cache library version and ABI.
-7. Provision the JWT server certificate and the separate read/write client certificates.
-8. Start Autobricks JWT and verify Cache initialization, enabled transports, and the audit destination.
+5. Install SoftHSM2 and verify that its PKCS#11 module is loadable.
+6. Install Autobricks JWT and its packaged Autobricks Cache shared library.
+7. Verify the Autobricks Cache library version and ABI.
+8. Configure the protected HSM token and Database-key roles.
+9. Provision the JWT server certificate and the separate read/write client certificates.
+10. Start Autobricks JWT and verify HSM and Cache initialization, enabled transports, and the audit destination.
 
 Installing only the package files is insufficient. Each client must complete its enrollment or setup and pass its connectivity check before Autobricks JWT treats the capability as available.
 
@@ -107,6 +135,8 @@ At startup, Autobricks JWT determines the active capability set and records it i
 Required behavior:
 
 - Refuse startup when the required Autobricks Cache shared library is absent, incompatible, or cannot initialize.
+- Refuse protected Database startup when the SoftHSM2 PKCS#11 module, token, or
+  required `CURRENT` key role is unavailable.
 - Do not advertise or bind TLS or mutual TLS when the PKI client configuration or required certificate material is unavailable.
 - Do not claim TrueLog audit completion when the TrueLog client is unavailable.
 - Continue writing operational errors and audit-event copies to syslog.
@@ -117,8 +147,8 @@ Required behavior:
 
 | Profile | Requirements | Intended use |
 | --- | --- | --- |
-| Secure | Required Cache library plus PKI client and TrueLog client installed, configured, and verified before JWT installation | Production deployments requiring mTLS identity and durable audit evidence |
-| Transport-reduced | Required Cache library installed; PKI client unavailable | Controlled environments using only Unix domain socket or protected TCP |
-| Audit-reduced | Required Cache library installed; TrueLog client unavailable | Environments that accept syslog-only records without WORM audit evidence |
+| Secure | Required Cache library and SoftHSM2 plus PKI client and TrueLog client installed, configured, and verified before JWT installation | Production deployments requiring protected Database keys, mTLS identity, and durable audit evidence |
+| Transport-reduced | Required Cache library and SoftHSM2 installed; PKI client unavailable | Controlled environments using protected Database keys with only Unix domain socket or protected TCP |
+| Audit-reduced | Required Cache library and SoftHSM2 installed; TrueLog client unavailable | Environments that accept syslog-only records without WORM audit evidence |
 
 The reduced profiles are explicit operational choices. They must not be described as providing the certificate authentication or immutable audit guarantees of the Secure profile.

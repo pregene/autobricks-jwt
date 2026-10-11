@@ -10,6 +10,10 @@ pub mod autobricks_cache;
 pub mod database_source;
 #[path = "cache/session_cache.rs"]
 pub mod session_cache;
+#[path = "cache/session_worker.rs"]
+pub mod session_worker;
+#[path = "cache/worker_process.rs"]
+pub mod worker_process;
 
 #[path = "audit/audit_log_repository.rs"]
 pub mod audit_log_repository;
@@ -27,6 +31,8 @@ pub mod operational_logger;
 
 #[path = "logging/operational_log_query.rs"]
 pub mod operational_log_query;
+#[path = "logging/production_audit.rs"]
+pub mod production_audit;
 
 #[path = "retention/sqlcipher_drain.rs"]
 pub mod sqlcipher_drain;
@@ -55,10 +61,22 @@ pub mod sqlcipher_registration_repository;
 #[path = "registration/client_deletion_service.rs"]
 pub mod client_deletion_service;
 
+#[path = "server/privileged_runtime.rs"]
+pub mod privileged_runtime;
+#[path = "server/production_scheduler.rs"]
+pub mod production_scheduler;
+#[path = "server/recovery_management.rs"]
+pub mod recovery_management;
 #[path = "server/runtime_context.rs"]
 pub mod runtime_context;
+#[path = "server/runtime_supervisor.rs"]
+pub mod runtime_supervisor;
 #[path = "server/server_application.rs"]
 pub mod server_application;
+#[path = "server/server_certificate_renewal.rs"]
+pub mod server_certificate_renewal;
+#[path = "server/service_certificate_management.rs"]
+pub mod service_certificate_management;
 
 #[path = "token/jwe_token.rs"]
 pub mod jwe_token;
@@ -92,6 +110,8 @@ pub mod unix_socket;
 
 #[path = "listener/connection_policy.rs"]
 pub mod connection_policy;
+#[path = "listener/runtime_connection.rs"]
+pub mod runtime_connection;
 #[path = "listener/runtime_listeners.rs"]
 pub mod runtime_listeners;
 
@@ -105,17 +125,27 @@ pub mod management_protocol;
 pub mod curses_ui;
 #[path = "management/management_service.rs"]
 pub mod management_service;
+#[path = "management/registration_workflow.rs"]
+pub mod registration_workflow;
 
 #[path = "retention/log_drain.rs"]
 pub mod log_drain;
 
-#[path = "security/database_key_rotation.rs"]
+#[path = "hsm/database_key_rotation.rs"]
 pub mod database_key_rotation;
 #[path = "storage/direct_database.rs"]
 pub mod direct_database;
+#[path = "hsm/helper_service.rs"]
+pub mod helper_service;
+#[path = "hsm/pkcs11_module.rs"]
+pub mod pkcs11_module;
 #[path = "security/recovery_authorization.rs"]
 pub mod recovery_authorization;
+#[path = "hsm/soft_hsm2.rs"]
+pub mod soft_hsm2;
 
+#[path = "installation/install_layout.rs"]
+pub mod install_layout;
 #[path = "installation/systemd_units.rs"]
 pub mod systemd_units;
 

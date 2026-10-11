@@ -10,6 +10,9 @@ use rusqlite::{Connection, backup::Backup, params};
 use crate::{recovery_authorization::RecoveryKeyVerifier, service_error::ServiceError};
 
 pub trait HsmDatabaseKeys {
+    fn initialize_current(&self) -> Result<(), ServiceError> {
+        self.current().map(|_| ())
+    }
     fn current(&self) -> Result<[u8; 32], ServiceError>;
     fn previous(&self) -> Result<Option<[u8; 32]>, ServiceError>;
     fn generate_next(&mut self) -> Result<[u8; 32], ServiceError>;
@@ -41,6 +44,7 @@ impl CommandHsmDatabaseKeys {
 
     fn call(&self, request: serde_json::Value) -> Result<serde_json::Value, ServiceError> {
         let mut child = Command::new(&self.helper)
+            .arg("--hsm-helper")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -80,6 +84,21 @@ impl CommandHsmDatabaseKeys {
 }
 
 impl HsmDatabaseKeys for CommandHsmDatabaseKeys {
+    fn initialize_current(&self) -> Result<(), ServiceError> {
+        let response = self.call(serde_json::json!({
+            "operation": "INITIALIZE",
+            "namespace": self.key_namespace
+        }))?;
+        if response
+            .get("initialized")
+            .and_then(|value| value.as_bool())
+            .is_some()
+        {
+            Ok(())
+        } else {
+            Err(hsm_failure("HSM initialization response is incomplete"))
+        }
+    }
     fn current(&self) -> Result<[u8; 32], ServiceError> {
         self.read_key("CURRENT")?
             .ok_or_else(|| hsm_failure("HSM CURRENT key is unavailable"))
@@ -141,6 +160,34 @@ pub struct BackupResult {
     pub completed_at: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BackupValidationState {
+    Available,
+    Missing,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryPoint {
+    pub generation: u64,
+    pub backup_file: PathBuf,
+    pub completed_at: u64,
+    pub validation: BackupValidationState,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryPreflight {
+    pub target_generation: u64,
+    pub chain_length: u64,
+    pub sqlcipher_integrity_verified: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreResult {
+    pub target_generation: u64,
+    pub invalidated_sessions: usize,
+    pub preserved_database: PathBuf,
+}
+
 pub struct DatabaseProtectionManager<H> {
     database_path: PathBuf,
     backup_directory: PathBuf,
@@ -198,6 +245,14 @@ impl<H: HsmDatabaseKeys> DatabaseProtectionManager<H> {
         now: u64,
     ) -> Result<BackupResult, ServiceError> {
         self.recovery.verify(submitted_recovery_key)?;
+        self.backup_and_rotate(now)
+    }
+
+    pub fn scheduled_backup_and_rotate(&mut self, now: u64) -> Result<BackupResult, ServiceError> {
+        self.backup_and_rotate(now)
+    }
+
+    fn backup_and_rotate(&mut self, now: u64) -> Result<BackupResult, ServiceError> {
         let current = self.hsm.current()?;
         let connection = open_sqlcipher(&self.database_path, &current)?;
         let generation = current_generation(&connection)?.saturating_add(1);
@@ -248,23 +303,159 @@ impl<H: HsmDatabaseKeys> DatabaseProtectionManager<H> {
         })
     }
 
-    pub fn restore_generation(
-        &mut self,
+    pub fn recovery_points(&self) -> Result<Vec<RecoveryPoint>, ServiceError> {
+        let current = self.hsm.current()?;
+        let connection = open_sqlcipher(&self.database_path, &current)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT generation, backup_file, completed_at
+                   FROM backup_history ORDER BY generation DESC",
+            )
+            .map_err(|_| database_failure("recovery-point catalog cannot be read"))?;
+        let records = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(|_| database_failure("recovery-point catalog cannot be read"))?;
+        records
+            .map(|record| {
+                let (generation, backup_file, completed_at) =
+                    record.map_err(|_| database_failure("recovery-point record is invalid"))?;
+                let generation = u64::try_from(generation)
+                    .map_err(|_| database_failure("backup generation is invalid"))?;
+                let completed_at = u64::try_from(completed_at)
+                    .map_err(|_| database_failure("backup completion time is invalid"))?;
+                let backup_file = PathBuf::from(backup_file);
+                let validation = if backup_file.is_file() {
+                    BackupValidationState::Available
+                } else {
+                    BackupValidationState::Missing
+                };
+                Ok(RecoveryPoint {
+                    generation,
+                    backup_file,
+                    completed_at,
+                    validation,
+                })
+            })
+            .collect()
+    }
+
+    pub fn preflight_restore(
+        &self,
         submitted_recovery_key: &str,
         target_generation: u64,
-    ) -> Result<(), ServiceError> {
+    ) -> Result<RecoveryPreflight, ServiceError> {
         self.recovery.verify(submitted_recovery_key)?;
-        if target_generation == 0 {
-            return Err(ServiceError::invalid_request(
-                "target generation is invalid",
-            ));
-        }
         let current_key = self.hsm.current()?;
         let previous_key = self
             .hsm
             .previous()?
             .ok_or_else(|| hsm_failure("HSM PREVIOUS key is unavailable"))?;
-        let active = open_sqlcipher(&self.database_path, &current_key)?;
+        let (selected, key, head) =
+            self.resolve_backup(target_generation, &current_key, previous_key)?;
+        validate_database(&selected, &key)?;
+        Ok(RecoveryPreflight {
+            target_generation,
+            chain_length: head - target_generation + 1,
+            sqlcipher_integrity_verified: true,
+        })
+    }
+
+    pub fn restore_generation(
+        &mut self,
+        submitted_recovery_key: &str,
+        target_generation: u64,
+    ) -> Result<RestoreResult, ServiceError> {
+        self.restore_generation_with_validation(
+            submitted_recovery_key,
+            target_generation,
+            validate_database,
+        )
+    }
+
+    fn restore_generation_with_validation<F>(
+        &mut self,
+        submitted_recovery_key: &str,
+        target_generation: u64,
+        final_validation: F,
+    ) -> Result<RestoreResult, ServiceError>
+    where
+        F: FnOnce(&Path, &[u8; 32]) -> Result<(), ServiceError>,
+    {
+        self.recovery.verify(submitted_recovery_key)?;
+        let current_key = self.hsm.current()?;
+        let previous_key = self
+            .hsm
+            .previous()?
+            .ok_or_else(|| hsm_failure("HSM PREVIOUS key is unavailable"))?;
+        let (selected, key, _) =
+            self.resolve_backup(target_generation, &current_key, previous_key)?;
+        let candidate = self.database_path.with_extension("restore-candidate");
+        if candidate.exists() {
+            fs::remove_file(&candidate)
+                .map_err(|_| database_failure("stale recovery candidate cannot be removed"))?;
+        }
+        fs::copy(&selected, &candidate)
+            .map_err(|_| database_failure("selected backup cannot be copied"))?;
+        let restored = open_sqlcipher(&candidate, &key)?;
+        rekey(&restored, &current_key)?;
+        let invalidated_sessions = invalidate_restored_sessions(&restored)?;
+        validate_database(&candidate, &current_key)?;
+        let preserved = self.database_path.with_extension("pre-recovery");
+        if preserved.exists() {
+            fs::remove_file(&preserved)
+                .map_err(|_| database_failure("previous recovery image cannot be removed"))?;
+        }
+        fs::rename(&self.database_path, &preserved)
+            .map_err(|_| database_failure("active database cannot be preserved"))?;
+        if fs::rename(&candidate, &self.database_path).is_err() {
+            let _ = fs::rename(&preserved, &self.database_path);
+            return Err(database_failure("restored database cannot be activated"));
+        }
+        if let Err(error) = final_validation(&self.database_path, &current_key) {
+            let failed = self.database_path.with_extension("failed-recovery");
+            let _ = fs::remove_file(&failed);
+            let _ = fs::rename(&self.database_path, &failed);
+            if fs::rename(&preserved, &self.database_path).is_err() {
+                return Err(database_failure(
+                    "recovery rollback could not restore active database",
+                ));
+            }
+            return Err(error);
+        }
+        Ok(RestoreResult {
+            target_generation,
+            invalidated_sessions,
+            preserved_database: preserved,
+        })
+    }
+
+    pub fn into_hsm(self) -> H {
+        self.hsm
+    }
+
+    fn backup_path(&self, generation: u64) -> PathBuf {
+        self.backup_directory
+            .join(format!("autobricks-jwt-{generation:020}.db"))
+    }
+
+    fn resolve_backup(
+        &self,
+        target_generation: u64,
+        current_key: &[u8; 32],
+        previous_key: [u8; 32],
+    ) -> Result<(PathBuf, [u8; 32], u64), ServiceError> {
+        if target_generation == 0 {
+            return Err(ServiceError::invalid_request(
+                "target generation is invalid",
+            ));
+        }
+        let active = open_sqlcipher(&self.database_path, current_key)?;
         let head = current_generation(&active)?;
         if target_generation > head {
             return Err(ServiceError::invalid_request(
@@ -277,7 +468,7 @@ impl<H: HsmDatabaseKeys> DatabaseProtectionManager<H> {
         loop {
             validate_database(&selected, &key)?;
             if generation == target_generation {
-                break;
+                return Ok((selected, key, head));
             }
             let opened = open_sqlcipher(&selected, &key)?;
             let preceding: Vec<u8> = opened
@@ -293,39 +484,42 @@ impl<H: HsmDatabaseKeys> DatabaseProtectionManager<H> {
             generation -= 1;
             selected = self.backup_path(generation);
         }
-        let candidate = self.database_path.with_extension("restore-candidate");
-        if candidate.exists() {
-            fs::remove_file(&candidate)
-                .map_err(|_| database_failure("stale recovery candidate cannot be removed"))?;
-        }
-        fs::copy(&selected, &candidate)
-            .map_err(|_| database_failure("selected backup cannot be copied"))?;
-        let restored = open_sqlcipher(&candidate, &key)?;
-        rekey(&restored, &current_key)?;
-        validate_database(&candidate, &current_key)?;
-        let preserved = self.database_path.with_extension("pre-recovery");
-        if preserved.exists() {
-            fs::remove_file(&preserved)
-                .map_err(|_| database_failure("previous recovery image cannot be removed"))?;
-        }
-        fs::rename(&self.database_path, &preserved)
-            .map_err(|_| database_failure("active database cannot be preserved"))?;
-        if fs::rename(&candidate, &self.database_path).is_err() {
-            let _ = fs::rename(&preserved, &self.database_path);
-            return Err(database_failure("restored database cannot be activated"));
-        }
-        validate_database(&self.database_path, &current_key)?;
-        Ok(())
     }
+}
 
-    pub fn into_hsm(self) -> H {
-        self.hsm
+fn invalidate_restored_sessions(connection: &Connection) -> Result<usize, ServiceError> {
+    let token_table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='token_versions')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| database_failure("restored session schema cannot be inspected"))?;
+    if !token_table_exists {
+        return Ok(0);
     }
-
-    fn backup_path(&self, generation: u64) -> PathBuf {
-        self.backup_directory
-            .join(format!("autobricks-jwt-{generation:020}.db"))
-    }
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|_| database_failure("restored session invalidation cannot start"))?;
+    let invalidated = transaction
+        .execute(
+            "UPDATE token_versions SET status='REVOKED' WHERE status='ACTIVE'",
+            [],
+        )
+        .map_err(|_| database_failure("restored sessions cannot be invalidated"))?;
+    transaction
+        .execute(
+            "UPDATE token_keys SET status='REVOKED' WHERE status='ACTIVE'",
+            [],
+        )
+        .map_err(|_| database_failure("restored token keys cannot be invalidated"))?;
+    transaction
+        .execute("DELETE FROM cache_cleanup_queue", [])
+        .map_err(|_| database_failure("restored Cache state cannot be cleared"))?;
+    transaction
+        .commit()
+        .map_err(|_| database_failure("restored session invalidation cannot be committed"))?;
+    Ok(invalidated)
 }
 
 fn open_sqlcipher(path: &Path, key: &[u8; 32]) -> Result<Connection, ServiceError> {
@@ -515,6 +709,154 @@ mod tests {
         let hsm = manager.into_hsm();
         assert_eq!(hsm.current, [1; 32]);
         assert!(hsm.previous.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn catalogs_completed_recovery_points_and_preflights_the_selected_chain() {
+        let root = std::env::temp_dir().join(format!("ab-jwt-catalog-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let database = root.join("jwt.db");
+        let (recovery_key, verifier) = GeneratedRecoveryKey::generate().unwrap().expose_once();
+        let hsm = MemoryHsm {
+            current: [1; 32],
+            previous: None,
+            next: 1,
+        };
+        let mut manager =
+            DatabaseProtectionManager::new(&database, root.join("backups"), hsm, verifier).unwrap();
+        manager.initialize_schema().unwrap();
+        manager
+            .force_backup_and_rotate(&recovery_key, 1_000)
+            .unwrap();
+        manager
+            .force_backup_and_rotate(&recovery_key, 2_000)
+            .unwrap();
+
+        let points = manager.recovery_points().unwrap();
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].generation, 2);
+        assert_eq!(points[0].completed_at, 2_000);
+        assert_eq!(points[0].validation, BackupValidationState::Available);
+        let preflight = manager.preflight_restore(&recovery_key, 1).unwrap();
+        assert_eq!(preflight.target_generation, 1);
+        assert_eq!(preflight.chain_length, 2);
+        assert!(preflight.sqlcipher_integrity_verified);
+        println!("RECOVERY_POINT_CATALOG=PASS");
+        println!("RECOVERY_PREFLIGHT=PASS");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restoration_invalidates_every_restored_active_session_before_activation() {
+        let root = std::env::temp_dir().join(format!("ab-jwt-invalidate-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let database = root.join("jwt.db");
+        let (recovery_key, verifier) = GeneratedRecoveryKey::generate().unwrap().expose_once();
+        let hsm = MemoryHsm {
+            current: [1; 32],
+            previous: None,
+            next: 1,
+        };
+        let mut manager =
+            DatabaseProtectionManager::new(&database, root.join("backups"), hsm, verifier).unwrap();
+        manager.initialize_schema().unwrap();
+        let connection = open_sqlcipher(&database, &[1; 32]).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE token_versions(token_id TEXT, status TEXT);
+             CREATE TABLE token_keys(token_id TEXT, status TEXT);
+             CREATE TABLE cache_cleanup_queue(token_id TEXT);
+             INSERT INTO token_versions VALUES('active-token', 'ACTIVE');
+             INSERT INTO token_versions VALUES('revoked-token', 'REVOKED');
+             INSERT INTO token_keys VALUES('active-token', 'ACTIVE');
+             INSERT INTO cache_cleanup_queue VALUES('active-token');",
+            )
+            .unwrap();
+        drop(connection);
+        manager
+            .force_backup_and_rotate(&recovery_key, 1_000)
+            .unwrap();
+        let result = manager.restore_generation(&recovery_key, 1).unwrap();
+        assert_eq!(result.invalidated_sessions, 1);
+        assert!(result.preserved_database.is_file());
+        let restored = open_sqlcipher(&database, &[2; 32]).unwrap();
+        let active_versions: i64 = restored
+            .query_row(
+                "SELECT COUNT(*) FROM token_versions WHERE status='ACTIVE'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let active_keys: i64 = restored
+            .query_row(
+                "SELECT COUNT(*) FROM token_keys WHERE status='ACTIVE'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let queued: i64 = restored
+            .query_row("SELECT COUNT(*) FROM cache_cleanup_queue", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!((active_versions, active_keys, queued), (0, 0, 0));
+        println!("RECOVERY_ATOMIC_ACTIVATION=PASS");
+        println!("RECOVERY_SESSION_INVALIDATION=PASS");
+        println!("RECOVERY_REACTIVATION_PREVENTION=PASS");
+        drop(restored);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_final_recovery_validation_restores_original_database_and_hsm_slots() {
+        let root = std::env::temp_dir().join(format!("ab-jwt-rollback-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let database = root.join("jwt.db");
+        let (recovery_key, verifier) = GeneratedRecoveryKey::generate().unwrap().expose_once();
+        let hsm = MemoryHsm {
+            current: [1; 32],
+            previous: None,
+            next: 1,
+        };
+        let mut manager =
+            DatabaseProtectionManager::new(&database, root.join("backups"), hsm, verifier).unwrap();
+        manager.initialize_schema().unwrap();
+        let connection = open_sqlcipher(&database, &[1; 32]).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE protected_data(value TEXT);
+                 INSERT INTO protected_data VALUES('original-zero');",
+            )
+            .unwrap();
+        drop(connection);
+        manager
+            .force_backup_and_rotate(&recovery_key, 1_000)
+            .unwrap();
+        let connection = open_sqlcipher(&database, &[2; 32]).unwrap();
+        connection
+            .execute("UPDATE protected_data SET value='original-one'", [])
+            .unwrap();
+        drop(connection);
+        manager
+            .force_backup_and_rotate(&recovery_key, 2_000)
+            .unwrap();
+        let current_before = manager.hsm.current;
+        let previous_before = manager.hsm.previous;
+        let error = manager
+            .restore_generation_with_validation(&recovery_key, 1, |_, _| {
+                Err(database_failure("injected final integrity failure"))
+            })
+            .unwrap_err();
+        assert_eq!(error.code(), 8081);
+        assert_eq!(manager.hsm.current, current_before);
+        assert_eq!(manager.hsm.previous, previous_before);
+        let original = open_sqlcipher(&database, &current_before).unwrap();
+        let value: String = original
+            .query_row("SELECT value FROM protected_data", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(value, "original-one");
+        drop(original);
         fs::remove_dir_all(root).unwrap();
     }
 

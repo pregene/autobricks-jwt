@@ -10,8 +10,10 @@ use crate::service_error::ServiceError;
 pub fn server_configuration(
     certificate_path: &Path,
     private_key_path: &Path,
+    trust_chain_path: &Path,
 ) -> Result<Arc<ServerConfig>, ServiceError> {
-    let certificates = load_certificates(certificate_path)?;
+    let mut certificates = load_certificates(certificate_path)?;
+    certificates.extend(load_certificates(trust_chain_path)?);
     let private_key = load_private_key(private_key_path)?;
     let configuration = ServerConfig::builder()
         .with_no_client_auth()
@@ -78,7 +80,8 @@ mod tests {
         let trust_chain = required_path("AUTOBRICKS_JWT_TEST_TRUST_CHAIN");
         let server_name = std::env::var("AUTOBRICKS_JWT_TEST_SERVER_NAME").unwrap();
 
-        let server_config = server_configuration(&server_certificate, &server_private_key).unwrap();
+        let server_config =
+            server_configuration(&server_certificate, &server_private_key, &trust_chain).unwrap();
         let client_config = client_configuration(&trust_chain).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();

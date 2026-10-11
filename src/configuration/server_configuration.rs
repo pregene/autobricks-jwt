@@ -9,7 +9,7 @@ use crate::service_error::ServiceError;
 const MINIMUM_TIMEOUT_SECONDS: u64 = 1;
 const MAXIMUM_TIMEOUT_SECONDS: u64 = 86_400;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServerConfiguration {
     pub timeout_seconds: u64,
     pub require_token_for_query_and_revoke: bool,
@@ -18,6 +18,8 @@ pub struct ServerConfiguration {
     pub backup_interval_days: u8,
     pub logging: LoggingSelection,
     pub management_socket: PathBuf,
+    pub inspection_socket: PathBuf,
+    pub audit_query_socket: PathBuf,
     pub database_path: PathBuf,
     pub hsm_helper: PathBuf,
     pub hsm_key_namespace: String,
@@ -28,7 +30,16 @@ pub struct ServerConfiguration {
     pub mtls_address: String,
     pub server_certificate: Option<PathBuf>,
     pub server_private_key: Option<PathBuf>,
+    pub server_trust_chain: Option<PathBuf>,
     pub client_trust_chain: Option<PathBuf>,
+    pub cache_library: PathBuf,
+    pub truelog_client: Option<PathBuf>,
+    pub openssl: PathBuf,
+    pub pki_client: Option<PathBuf>,
+    pub pki_issuer: Option<String>,
+    pub pki_staging_directory: Option<PathBuf>,
+    pub ocsp_responder_override: Option<String>,
+    pub maximum_connection_lifetime_seconds: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -144,6 +155,8 @@ impl ServerConfiguration {
             "log_issuance",
             "log_audit",
             "management_socket",
+            "inspection_socket",
+            "audit_query_socket",
             "database_path",
             "hsm_helper",
             "hsm_key_namespace",
@@ -154,7 +167,16 @@ impl ServerConfiguration {
             "mtls_address",
             "server_certificate",
             "server_private_key",
+            "server_trust_chain",
             "client_trust_chain",
+            "cache_library",
+            "truelog_client",
+            "openssl",
+            "pki_client",
+            "pki_issuer",
+            "pki_staging_directory",
+            "ocsp_responder_override",
+            "maximum_connection_lifetime",
         ];
         if let Some(key) = values
             .keys()
@@ -223,6 +245,19 @@ impl ServerConfiguration {
                 "management_socket must be an absolute path",
             ));
         }
+        let inspection_socket = values
+            .remove("inspection_socket")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/run/autobricks-jwt/inspection.sock"));
+        let audit_query_socket = values
+            .remove("audit_query_socket")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/run/autobricks-jwt/audit-query.sock"));
+        if !inspection_socket.is_absolute() || !audit_query_socket.is_absolute() {
+            return Err(ServiceError::configuration_invalid(
+                "privileged service socket paths must be absolute",
+            ));
+        }
 
         let database_path = PathBuf::from(take_required(&mut values, "database_path")?);
         if !database_path.is_absolute() {
@@ -263,16 +298,104 @@ impl ServerConfiguration {
             .unwrap_or_else(|| "127.0.0.1:0".to_owned());
         let server_certificate = values.remove("server_certificate").map(PathBuf::from);
         let server_private_key = values.remove("server_private_key").map(PathBuf::from);
+        let server_trust_chain = values.remove("server_trust_chain").map(PathBuf::from);
         let client_trust_chain = values.remove("client_trust_chain").map(PathBuf::from);
+        let cache_library = values
+            .remove("cache_library")
+            .map(PathBuf::from)
+            .unwrap_or_else(default_cache_library);
+        if !cache_library.is_absolute() {
+            return Err(ServiceError::configuration_invalid(
+                "cache_library must be an absolute path",
+            ));
+        }
+        let truelog_client = values.remove("truelog_client").map(PathBuf::from);
+        if truelog_client
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute())
+        {
+            return Err(ServiceError::configuration_invalid(
+                "truelog_client must be an absolute path",
+            ));
+        }
+        let openssl = values
+            .remove("openssl")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/usr/bin/openssl"));
+        if !openssl.is_absolute() {
+            return Err(ServiceError::configuration_invalid(
+                "openssl must be an absolute path",
+            ));
+        }
+        let pki_client = values.remove("pki_client").map(PathBuf::from);
+        if pki_client.as_ref().is_some_and(|path| !path.is_absolute()) {
+            return Err(ServiceError::configuration_invalid(
+                "pki_client must be an absolute path",
+            ));
+        }
+        let pki_issuer = values.remove("pki_issuer");
+        let pki_staging_directory = values.remove("pki_staging_directory").map(PathBuf::from);
+        if pki_staging_directory
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute())
+        {
+            return Err(ServiceError::configuration_invalid(
+                "pki_staging_directory must be an absolute path",
+            ));
+        }
+        if pki_client.is_some()
+            && (pki_issuer
+                .as_ref()
+                .is_none_or(|value| value.trim().is_empty())
+                || pki_staging_directory.is_none())
+        {
+            return Err(ServiceError::configuration_invalid(
+                "pki_client requires pki_issuer and pki_staging_directory",
+            ));
+        }
+        if pki_client.is_none() && (pki_issuer.is_some() || pki_staging_directory.is_some()) {
+            return Err(ServiceError::configuration_invalid(
+                "PKI settings require pki_client",
+            ));
+        }
+        let ocsp_responder_override = values.remove("ocsp_responder_override");
+        if ocsp_responder_override
+            .as_ref()
+            .is_some_and(|value| !(value.starts_with("https://") || value.starts_with("http://")))
+        {
+            return Err(ServiceError::configuration_invalid(
+                "ocsp_responder_override must use http:// or https://",
+            ));
+        }
+        let maximum_connection_lifetime_seconds = values
+            .remove("maximum_connection_lifetime")
+            .map(|value| {
+                value.parse::<u64>().map_err(|_| {
+                    ServiceError::configuration_invalid(
+                        "maximum_connection_lifetime must be an integer",
+                    )
+                })
+            })
+            .transpose()?
+            .unwrap_or(86_400);
+        if !(1..=604_800).contains(&maximum_connection_lifetime_seconds) {
+            return Err(ServiceError::configuration_invalid(
+                "maximum_connection_lifetime must be between 1 and 604800 seconds",
+            ));
+        }
         let certificate_transport = runtime_transports.iter().any(|transport| {
             matches!(
                 transport,
                 RuntimeTransport::Tls | RuntimeTransport::MutualTls
             )
         });
-        if certificate_transport && (server_certificate.is_none() || server_private_key.is_none()) {
+        if certificate_transport
+            && (server_certificate.is_none()
+                || server_private_key.is_none()
+                || server_trust_chain.is_none())
+        {
             return Err(ServiceError::configuration_invalid(
-                "TLS transports require server_certificate and server_private_key",
+                "TLS transports require server_certificate, server_private_key, and server_trust_chain",
             ));
         }
         if runtime_transports.contains(&RuntimeTransport::MutualTls) && client_trust_chain.is_none()
@@ -290,6 +413,8 @@ impl ServerConfiguration {
             backup_interval_days,
             logging,
             management_socket,
+            inspection_socket,
+            audit_query_socket,
             database_path,
             hsm_helper,
             hsm_key_namespace,
@@ -300,8 +425,25 @@ impl ServerConfiguration {
             mtls_address,
             server_certificate,
             server_private_key,
+            server_trust_chain,
             client_trust_chain,
+            cache_library,
+            truelog_client,
+            openssl,
+            pki_client,
+            pki_issuer,
+            pki_staging_directory,
+            ocsp_responder_override,
+            maximum_connection_lifetime_seconds,
         })
+    }
+}
+
+fn default_cache_library() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        PathBuf::from("/usr/local/lib/libautobricks_cache.dylib")
+    } else {
+        PathBuf::from("/usr/lib/libautobricks_cache.so")
     }
 }
 

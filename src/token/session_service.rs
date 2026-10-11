@@ -134,7 +134,7 @@ impl<'a> SessionService<'a> {
         })
     }
 
-    pub fn query_audited<A: AuditRecorder>(
+    pub fn query_audited<A: AuditRecorder + ?Sized>(
         &mut self,
         request: JwtQueryRequest,
         now: u64,
@@ -156,7 +156,7 @@ impl<'a> SessionService<'a> {
         }
     }
 
-    pub fn query_cached<C: SessionCache>(
+    pub fn query_cached<C: SessionCache + ?Sized>(
         &mut self,
         request: JwtQueryRequest,
         now: u64,
@@ -223,7 +223,7 @@ impl<'a> SessionService<'a> {
         self.tokens.revoke_active(request.token_id)
     }
 
-    pub fn revoke_cached<C: SessionCache>(
+    pub fn revoke_cached<C: SessionCache + ?Sized>(
         &mut self,
         request: JwtRevokeRequest,
         now: u64,
@@ -263,7 +263,7 @@ impl<'a> SessionService<'a> {
         Ok(completed)
     }
 
-    fn remove_pending_cache_record<C: SessionCache>(
+    fn remove_pending_cache_record<C: SessionCache + ?Sized>(
         &mut self,
         token_id: Uuid,
         cache: &mut C,

@@ -1,4 +1,6 @@
 use ring::digest::{SHA256, digest};
+use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
 
 use crate::service_error::ServiceError;
 
@@ -62,6 +64,116 @@ impl RecoveryKeyVerifier {
     }
 }
 
+pub struct RecoveryAuthorizationRepository {
+    connection: Connection,
+}
+
+impl RecoveryAuthorizationRepository {
+    pub fn open(path: &Path, database_key: &[u8; 32]) -> Result<Self, ServiceError> {
+        let connection = Connection::open(path).map_err(|_| storage_failure())?;
+        let key = encode_hex(database_key);
+        connection
+            .execute_batch(&format!("PRAGMA key = \"x'{key}'\";"))
+            .map_err(|_| storage_failure())?;
+        let version: String = connection
+            .query_row("PRAGMA cipher_version", [], |row| row.get(0))
+            .map_err(|_| storage_failure())?;
+        if version.is_empty() {
+            return Err(storage_failure());
+        }
+        connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS recovery_authorization (
+            singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+            verifier BLOB NOT NULL CHECK(length(verifier) = 32),
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS recovery_operation_history (
+            history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operation TEXT NOT NULL,
+            result TEXT NOT NULL CHECK(result IN ('SUCCESS', 'FAILURE')),
+            error_code INTEGER,
+            completed_at INTEGER NOT NULL
+        );",
+            )
+            .map_err(|_| storage_failure())?;
+        Ok(Self { connection })
+    }
+
+    pub fn initialize(&mut self, now: u64) -> Result<String, ServiceError> {
+        if self.load()?.is_some() {
+            return Err(ServiceError::invalid_request(
+                "recovery authorization is already initialized",
+            ));
+        }
+        let (plaintext, verifier) = GeneratedRecoveryKey::generate()?.expose_once();
+        self.connection.execute(
+            "INSERT INTO recovery_authorization(singleton, verifier, created_at) VALUES (1, ?1, ?2)",
+            params![verifier.as_bytes().as_slice(), i64::try_from(now).map_err(|_| storage_failure())?],
+        ).map_err(|_| storage_failure())?;
+        Ok(plaintext)
+    }
+
+    pub fn require(&self) -> Result<RecoveryKeyVerifier, ServiceError> {
+        self.load()?.ok_or_else(|| {
+            ServiceError::configuration_invalid("recovery authorization is not initialized")
+        })
+    }
+
+    pub fn clear_failed_initialization(&mut self) -> Result<(), ServiceError> {
+        self.connection
+            .execute("DELETE FROM recovery_authorization WHERE singleton = 1", [])
+            .map(|_| ())
+            .map_err(|_| storage_failure())
+    }
+
+    pub fn record_operation(
+        &mut self,
+        operation: &str,
+        result: &str,
+        error_code: Option<u16>,
+        completed_at: u64,
+    ) -> Result<(), ServiceError> {
+        if operation.is_empty() || !matches!(result, "SUCCESS" | "FAILURE") {
+            return Err(storage_failure());
+        }
+        self.connection.execute(
+            "INSERT INTO recovery_operation_history(operation, result, error_code, completed_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                operation,
+                result,
+                error_code.map(i64::from),
+                i64::try_from(completed_at).map_err(|_| storage_failure())?
+            ],
+        ).map(|_| ()).map_err(|_| storage_failure())
+    }
+
+    fn load(&self) -> Result<Option<RecoveryKeyVerifier>, ServiceError> {
+        let bytes: Option<Vec<u8>> = self
+            .connection
+            .query_row(
+                "SELECT verifier FROM recovery_authorization WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| storage_failure())?;
+        bytes
+            .map(|value| {
+                value
+                    .try_into()
+                    .map(RecoveryKeyVerifier::from_bytes)
+                    .map_err(|_| storage_failure())
+            })
+            .transpose()
+    }
+}
+
+fn storage_failure() -> ServiceError {
+    ServiceError::classified(8081, "recovery authorization storage failed").expect("assigned error")
+}
+
 fn encode_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -117,5 +229,76 @@ mod tests {
         let (first, _) = GeneratedRecoveryKey::generate().unwrap().expose_once();
         let (second, _) = GeneratedRecoveryKey::generate().unwrap().expose_once();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn persists_only_one_recovery_verifier_in_sqlcipher() {
+        let path =
+            std::env::temp_dir().join(format!("ab-jwt-recovery-auth-{}.db", uuid::Uuid::new_v4()));
+        let key = [0x91; 32];
+        let plaintext = {
+            let mut repository = RecoveryAuthorizationRepository::open(&path, &key).unwrap();
+            let plaintext = repository.initialize(1_000).unwrap();
+            assert_eq!(repository.initialize(1_001).unwrap_err().code(), 8001);
+            plaintext
+        };
+        let repository = RecoveryAuthorizationRepository::open(&path, &key).unwrap();
+        repository.require().unwrap().verify(&plaintext).unwrap();
+        let database_bytes = std::fs::read(&path).unwrap();
+        assert!(
+            !database_bytes
+                .windows(plaintext.len())
+                .any(|window| window == plaintext.as_bytes())
+        );
+        drop(repository);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn persists_redacted_success_and_failure_recovery_evidence() {
+        let path = std::env::temp_dir().join(format!(
+            "ab-jwt-recovery-history-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let key = [0x92; 32];
+        let repository = RecoveryAuthorizationRepository::open(&path, &key).unwrap();
+        drop(repository);
+        let mut repository = RecoveryAuthorizationRepository::open(&path, &key).unwrap();
+        repository
+            .record_operation("DATABASE_RESTORE", "SUCCESS", None, 1_000)
+            .unwrap();
+        repository
+            .record_operation("DATABASE_RESTORE", "FAILURE", Some(8081), 1_001)
+            .unwrap();
+        let rows: Vec<(String, String, Option<u16>, u64)> = {
+            let mut statement = repository
+                .connection
+                .prepare(
+                    "SELECT operation, result, error_code, completed_at
+                 FROM recovery_operation_history ORDER BY history_id",
+                )
+                .unwrap();
+            statement
+                .query_map([], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        assert_eq!(
+            rows,
+            vec![
+                ("DATABASE_RESTORE".into(), "SUCCESS".into(), None, 1_000),
+                (
+                    "DATABASE_RESTORE".into(),
+                    "FAILURE".into(),
+                    Some(8081),
+                    1_001
+                ),
+            ]
+        );
+        drop(repository);
+        std::fs::remove_file(path).unwrap();
     }
 }
