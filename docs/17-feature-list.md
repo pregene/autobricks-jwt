@@ -186,3 +186,10 @@ workflow, packaging, and end-to-end restart behavior are tracked separately.
 | FTL-173 | `DONE` | Preserve a completed mTLS handshake when a subsequent transport read reaches its timeout | [Service Certificate](16-service-certificate.md) |
 | FTL-174 | `DONE` | Separate the bounded mTLS handshake timeout from post-authentication keep-alive polling | [Service Certificate](16-service-certificate.md) |
 | FTL-175 | `DONE` | Normalize accepted mTLS sockets to blocking handshake mode before certificate negotiation | [Service Certificate](16-service-certificate.md) |
+| FTL-176 | `DONE` | macOS menu-bar application automatically opened by a per-user LaunchAgent after package installation | [Installation](../INSTALL.md#macos-installation-lifecycle) |
+| FTL-177 | `DONE` | Native macOS setup application with dependency-gated transport and logging selection | [Installation](../INSTALL.md#macos-installation-lifecycle) |
+| FTL-178 | `DONE` | macOS System Keychain custody for the SoftHSM2 runtime PIN | [Installation](../INSTALL.md#macos-installation-lifecycle) |
+| FTL-179 | `DONE` | Complete macOS uninstall of JWT-owned services, application, protected state, credentials, logs, sockets, and receipt | [Installation](../INSTALL.md#macos-installation-lifecycle) |
+| FTL-180 | `DONE` | Exact installed-operator UID authorization for the privileged macOS management Broker | [Installation](../INSTALL.md#macos-installation-lifecycle) |
+| FTL-181 | `DONE` | Automatic valid-issuer discovery and protected server-certificate provisioning through the installed Autobricks PKI client | [Installation](../INSTALL.md#macos-installation-lifecycle) |
+| FTL-182 | `DONE` | Independent TLS and mutual-TLS setup controls with a trailing configuration action and concise failure reporting | [Installation](../INSTALL.md#macos-installation-lifecycle) |

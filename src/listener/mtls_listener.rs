@@ -69,7 +69,9 @@ mod tests {
             .split("#[cfg(test)]")
             .next()
             .unwrap();
-        assert!(client.contains("certificates.extend(load_certificates(server_trust_chain_path)?)"));
+        assert!(
+            client.contains("certificates.extend(load_certificates(server_trust_chain_path)?)")
+        );
         assert!(client.contains("with_client_auth_cert(certificates, private_key)"));
     }
 

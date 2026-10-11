@@ -1,7 +1,8 @@
 bash: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8): No such file or directory
-Autobricks JWT Server Test 0.1.170
+Autobricks JWT Server Test 0.1.178
 Building ab-jwtd...
-    Finished `release` profile [optimized] target(s) in 0.20s
+   Compiling autobricks-jwt v0.1.178 (<redacted-path>)
+    Finished `release` profile [optimized] target(s) in 30.43s
 
 [TEST 001]
 Purpose : Build and install the release test binary
@@ -133,14 +134,14 @@ Result  : PASS
 
 [TEST 021]
 Purpose : version uses VERSION
-Expected: exit=0 and output contains 'Autobricks JWT Server 0.1.170'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.170
+Expected: exit=0 and output contains 'Autobricks JWT Server 0.1.178'
+Actual  : exit=0; output=Autobricks JWT Server 0.1.178
 Result  : PASS
 
 [TEST 022]
 Purpose : help names configuration validation
 Expected: exit=0 and output contains 'ab-jwtd --check-config PATH'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.170 (C) 2026 Autobricks, Co.
+Actual  : exit=0; output=Autobricks JWT Server 0.1.178 (C) 2026 Autobricks, Co.
 Usage:
 ab-jwtd --initialize PATH
 ab-jwtd --check-config PATH
@@ -157,7 +158,7 @@ Result  : PASS
 [TEST 023]
 Purpose : no arguments display help
 Expected: exit=0 and output contains 'Usage:'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.170 (C) 2026 Autobricks, Co.
+Actual  : exit=0; output=Autobricks JWT Server 0.1.178 (C) 2026 Autobricks, Co.
 Usage:
 ab-jwtd --initialize PATH
 ab-jwtd --check-config PATH
@@ -174,7 +175,7 @@ Result  : PASS
 [TEST 024]
 Purpose : minimal configuration uses secure token default
 Expected: exit=0 and output contains 'Require complete token for query and revoke: true'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.170
+Actual  : exit=0; output=Autobricks JWT Server 0.1.178
 Configuration: valid
 Keep-alive timeout: 3600 seconds
 Require complete token for query and revoke: true
@@ -186,7 +187,7 @@ Result  : PASS
 [TEST 025]
 Purpose : minimal configuration uses 04:00 renewal default
 Expected: exit=0 and output contains 'Certificate renewal time: 04:00'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.170
+Actual  : exit=0; output=Autobricks JWT Server 0.1.178
 Configuration: valid
 Keep-alive timeout: 3600 seconds
 Require complete token for query and revoke: true
@@ -198,7 +199,7 @@ Result  : PASS
 [TEST 026]
 Purpose : explicit configuration is accepted
 Expected: exit=0 and output contains 'Certificate renewal time: 23:45'
-Actual  : exit=0; output=Autobricks JWT Server 0.1.170
+Actual  : exit=0; output=Autobricks JWT Server 0.1.178
 Configuration: valid
 Keep-alive timeout: 900 seconds
 Require complete token for query and revoke: false
@@ -493,12 +494,12 @@ Actual  : {
   "after": {
     "checksum": "<redacted-hex>",
     "file": "truelog-2026-10-12.log",
-    "filesize": 184
+    "filesize": 1656
   },
   "before": {
     "checksum": "<redacted-hex>",
     "file": "truelog-2026-10-12.log",
-    "filesize": 0
+    "filesize": 1472
   },
   "hostname": "<redacted>",
   "service": "autobricks-jwt"
@@ -508,52 +509,52 @@ Result  : PASS
 [TEST 062]
 Purpose : Validate the complete TrueLog append receipt
 Expected: identity, file boundary, increasing size, and both SHA-256 values satisfy LOGGING.md
-Actual  : validated service=autobricks-jwt file=truelog-2026-10-12.log bytes=0->184
+Actual  : validated service=autobricks-jwt file=truelog-2026-10-12.log bytes=1472->1656
 Result  : PASS
 
 [TEST 063]
 Purpose : Confirm the changed WORM file through ab-truelog-cli info
-Expected: current lock_offset equals the append receipt after.filesize (184)
+Expected: current lock_offset equals the append receipt after.filesize (1656)
 Actual  : {
   "checksum": "<redacted-hex>",
   "created_at": 4016442,
   "format_version": 1,
-  "lock_offset": 184,
+  "lock_offset": 1656,
   "retain_until": 35552442,
   "sha256_state": [
-    178,
-    87,
-    47,
-    92,
+    254,
+    53,
+    228,
+    133,
+    91,
+    124,
+    148,
+    198,
+    78,
+    39,
+    212,
+    228,
+    255,
+    35,
+    247,
+    79,
+    129,
+    98,
+    243,
     187,
-    60,
-    125,
-    61,
-    227,
-    250,
-    59,
-    201,
-    161,
-    80,
-    142,
-    242,
-    218,
-    163,
-    51,
-    202,
-    233,
-    165,
-    164,
-    11,
-    107,
-    185,
-    125,
-    59,
-    2,
+    173,
+    186,
     131,
-    216,
-    223,
-    2,
+    191,
+    215,
+    43,
+    146,
+    78,
+    232,
+    208,
+    88,
+    159,
+    25,
     0,
     0,
     0,
@@ -606,13 +607,13 @@ Actual  : {
     49,
     49,
     84,
-    49,
-    55,
+    50,
+    51,
     58,
     52,
-    53,
+    57,
     58,
-    51,
+    50,
     48,
     90,
     34,
@@ -650,7 +651,7 @@ Result  : PASS
 [TEST 067]
 Purpose : Reload the complete receipt from the audit database
 Expected: service, file, before size, and after size match the write receipt
-Actual  : Audit receipt reloaded: service=autobricks-jwt file=truelog-2026-10-12.log before=0 after=184
+Actual  : Audit receipt reloaded: service=autobricks-jwt file=truelog-2026-10-12.log before=1472 after=1656
 Result  : PASS
 
 [TEST 068]
@@ -663,8 +664,8 @@ Running ab-jwt-cli through the two management Unix sockets...
 
 [TEST 069]
 Purpose : Build and execute ab-jwt-cli
-Expected: the management client reports version 0.1.170
-Actual  : Autobricks JWT Management Client 0.1.170
+Expected: the management client reports version 0.1.178
+Actual  : Autobricks JWT Management Client 0.1.178
 Result  : PASS
 
 [TEST 070]
@@ -1311,7 +1312,49 @@ Expected: an inherited nonblocking state cannot become an immediate authenticati
 Actual  : accepted-socket mode regression guard passed
 Result  : PASS
 
+[TEST 176]
+Purpose : Launch the macOS setup application automatically
+Expected: the packaged per-user LaunchAgent starts the menu-bar application at load
+Actual  : RunAtLoad LaunchAgent and native application entry point are present
+Result  : PASS
+
+[TEST 177]
+Purpose : Compile the native macOS setup security workflow
+Expected: the AppKit setup compiles and enforces the required UNIX and dependency-gated secure transport contract
+Actual  : native setup compilation and required-transport guard passed
+Result  : PASS
+
+[TEST 178]
+Purpose : Protect the macOS HSM runtime PIN in System Keychain
+Expected: setup stores and runtime retrieves the PIN without placing it in service configuration
+Actual  : Keychain write/read boundary and plist secret-absence checks passed
+Result  : PASS
+
+[TEST 179]
+Purpose : Remove all JWT-owned macOS installation state
+Expected: uninstall stops all launchd jobs and removes application, configuration, protected data, credentials, sockets, logs, and receipt
+Actual  : complete removal path inventory is present
+Result  : PASS
+
+[TEST 180]
+Purpose : Authorize the installed macOS operator through the privileged Broker
+Expected: the client socket group permits connection while the exact post-install login UID independently authorizes requests
+Actual  : numeric UID validation and LaunchDaemon post-install binding passed
+Result  : PASS
+
+[TEST 181]
+Purpose : Provision the macOS server identity through Autobricks PKI
+Expected: setup discovers a valid issuer and verifies the downloaded identity before protected installation
+Actual  : issuer discovery, issuance, download, archive, fingerprint, key, and chain boundaries are present
+Result  : PASS
+
+[TEST 182]
+Purpose : Keep macOS secure transport controls independent
+Expected: TLS and mutual-TLS addresses follow their own selections while Apply, Close, concise errors, and persistent completion state remain usable
+Actual  : independent address state, concise error extraction, Apply and Close controls, success close, and all completed-state controls disabled passed
+Result  : PASS
+
 Test summary
-Total : 175
-Passed: 175
+Total : 182
+Passed: 182
 Failed: 0

@@ -231,3 +231,47 @@ The complete server and client certificate renewal contract is defined in
 | --- | --- |
 | `autobricks-jwt.service` | Autobricks JWT server service |
 | `autobricks-jwt-cli.service` | Local management broker that authenticates and filters `ab-jwt-cli` requests before forwarding them to `ab-jwtd` |
+
+## macOS Installation Lifecycle
+
+The macOS server package installs the server, management broker, and
+`Autobricks JWT.app`. Installation registers the application as a per-user
+LaunchAgent and opens its setup window automatically. The operator does not
+run a separate setup command after package installation.
+
+The setup application verifies SoftHSM2 availability and exposes only the
+security integrations available on the host. UNIX transport is always enabled
+and cannot be cleared. TLS and mutual TLS remain unavailable unless the
+Autobricks PKI client is present and selected.
+
+The setup application obtains the valid certificate-issuer list from the
+installed Autobricks PKI client. When TLS or mutual TLS is selected, it issues
+and downloads the server identity, verifies the certificate fingerprint,
+private-key match, and trust chain, and installs the protected certificate
+files before starting the secure Listener. TLS and mutual TLS have independent
+Listener-address controls. Mutual TLS additionally installs the client trust
+chain used to authenticate registered services.
+
+The privileged setup helper is a packaged native executable. Configuration and
+certificate provisioning do not depend on a system Python installation or
+interpreter version.
+
+Applying the configuration requires macOS administrator authorization. The
+privileged setup operation validates the complete configuration, initializes
+the protected SQLCipher Database and its initial backup and key rotation, and
+starts the server and management broker. The SoftHSM2 runtime PIN is retained
+in the macOS System Keychain and is not written to the server configuration or
+LaunchDaemon property list.
+
+The management Broker remains privileged so it can reach the server-only
+management socket. Its client-facing socket is assigned to the installed
+operator's primary group, while request authorization is fixed to the exact
+login-user UID recorded by post-installation. Membership in the socket group
+alone does not authorize a management operation.
+
+After configuration, the menu-bar application provides settings access and an
+uninstall action. Uninstall stops and unregisters the LaunchAgent and both
+LaunchDaemons, then removes package programs, the application, configuration,
+SQLCipher data, backups, JWT-owned HSM objects, sockets, logs, the Keychain
+credential, and the package receipt. External TrueLog evidence is not owned by
+the JWT host package and is not deleted.

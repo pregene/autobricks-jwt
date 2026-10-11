@@ -276,9 +276,14 @@ pub fn serve_broker(
     request_count: usize,
 ) -> Result<(), ServiceError> {
     let identity = effective_peer_identity();
+    let allowed_uid = std::env::var("AUTOBRICKS_JWT_BROKER_ALLOWED_UID")
+        .ok()
+        .map(|value| parse_broker_allowed_uid(&value))
+        .transpose()?
+        .unwrap_or(identity.0);
     let policy = BrokerPolicy::new(
-        [identity.0],
-        [identity.1],
+        [allowed_uid],
+        std::iter::empty(),
         [
             "GET_CAPABILITIES",
             "REGISTER_CLIENT",
@@ -300,6 +305,12 @@ pub fn serve_broker(
         request_count,
         policy,
     )
+}
+
+fn parse_broker_allowed_uid(value: &str) -> Result<u32, ServiceError> {
+    value.parse::<u32>().map_err(|_| {
+        ServiceError::configuration_invalid("management broker allowed UID is invalid")
+    })
 }
 
 pub fn serve_broker_with_policy(
@@ -763,6 +774,15 @@ mod tests {
 
     use crate::{management_protocol::ManagementRequest, service_registry::OperationClass};
     use uuid::Uuid;
+
+    #[test]
+    fn parses_the_installed_macos_operator_uid_for_broker_authorization() {
+        assert_eq!(parse_broker_allowed_uid("501").unwrap(), 501);
+        assert_eq!(
+            parse_broker_allowed_uid("operator").unwrap_err().code(),
+            8090
+        );
+    }
 
     #[test]
     fn relays_verified_binary_attachment_separately_from_json() {

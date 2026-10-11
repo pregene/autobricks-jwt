@@ -1,6 +1,6 @@
 [package]
 name = "autobricks-jwt"
-version = "0.1.170"
+version = "0.1.178"
 edition = "2024"
 license-file = "LICENSE"
 description = "Opaque encrypted JWT service for the Autobricks family"
@@ -37,6 +37,10 @@ path = "src/bin/ab-jwtd.rs"
 [[bin]]
 name = "ab-jwt-cli"
 path = "src/bin/ab-jwt-cli.rs"
+
+[[bin]]
+name = "ab-jwt-setup"
+path = "src/macos/setup/main.rs"
 
 [profile.release]
 codegen-units = 1
