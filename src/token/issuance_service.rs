@@ -85,11 +85,10 @@ impl<'a> IssuanceService<'a> {
         }
 
         if service.source_type.as_deref() != Some("CLIENT_JSON") {
-            return Err(ServiceError::classified(
+            return Err(ServiceError::assigned(
                 8052,
                 "CLIENT_JSON is not configured for this service",
-            )
-            .expect("8052 must be assigned"));
+            ));
         }
 
         reject_reserved_claims(&request.data)?;
@@ -99,20 +98,18 @@ impl<'a> IssuanceService<'a> {
                 .keys()
                 .any(|name| !schema.iter().any(|field| &field.name == name))
             {
-                return Err(ServiceError::classified(
+                return Err(ServiceError::assigned(
                     8054,
                     "subject data contains an unregistered field",
-                )
-                .expect("8054 must be assigned"));
+                ));
             }
             for field in schema {
                 let value = request.data.get(&field.name);
                 if field.required && value.is_none() {
-                    return Err(ServiceError::classified(
+                    return Err(ServiceError::assigned(
                         8054,
                         "required subject field is missing",
-                    )
-                    .expect("8054 must be assigned"));
+                    ));
                 }
                 if let Some(value) = value {
                     use crate::service_registry::ClientJsonValueType;
@@ -122,11 +119,10 @@ impl<'a> IssuanceService<'a> {
                         ClientJsonValueType::Boolean => value.is_boolean(),
                     };
                     if !matches {
-                        return Err(ServiceError::classified(
+                        return Err(ServiceError::assigned(
                             8054,
                             "subject field type is invalid",
-                        )
-                        .expect("8054 must be assigned"));
+                        ));
                     }
                 }
             }
@@ -153,22 +149,21 @@ impl<'a> IssuanceService<'a> {
             return Ok(response(request.request_id, existing));
         }
         if service.source_type.as_deref() != Some("DATABASE") {
-            return Err(ServiceError::classified(
+            return Err(ServiceError::assigned(
                 8052,
                 "DATABASE is not configured for this service",
-            )
-            .expect("8052 must be assigned"));
+            ));
         }
-        let plan = service.database_source.as_ref().ok_or_else(|| {
-            ServiceError::classified(8052, "DATABASE source plan is unavailable")
-                .expect("8052 must be assigned")
-        })?;
+        let plan = service
+            .database_source
+            .as_ref()
+            .ok_or_else(|| ServiceError::assigned(8052, "DATABASE source plan is unavailable"))?;
         let conditions = Value::Object(request.data);
         let record = plan.load_subject(cache, &conditions)?;
-        let data = record.as_object().cloned().ok_or_else(|| {
-            ServiceError::classified(8054, "DATABASE subject record is invalid")
-                .expect("8054 must be assigned")
-        })?;
+        let data = record
+            .as_object()
+            .cloned()
+            .ok_or_else(|| ServiceError::assigned(8054, "DATABASE subject record is invalid"))?;
         reject_reserved_claims(&data)?;
         self.issue_subject(
             JwtCreateRequest {
@@ -273,10 +268,10 @@ fn reject_reserved_claims(data: &Map<String, Value>) -> Result<(), ServiceError>
         .iter()
         .any(|field| data.contains_key(*field))
     {
-        Err(
-            ServiceError::classified(8054, "subject data contains a JWT-controlled field")
-                .expect("8054 must be assigned"),
-        )
+        Err(ServiceError::assigned(
+            8054,
+            "subject data contains a JWT-controlled field",
+        ))
     } else {
         Ok(())
     }

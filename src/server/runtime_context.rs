@@ -34,10 +34,7 @@ impl RuntimeContextHandle {
             .map_err(|_| ServiceError::internal("runtime context lock failed"))?
             .as_ref()
             .map(Arc::clone)
-            .ok_or_else(|| {
-                ServiceError::classified(8092, "runtime is not accepting requests")
-                    .expect("assigned error")
-            })
+            .ok_or_else(|| ServiceError::assigned(8092, "runtime is not accepting requests"))
     }
 
     pub fn replace(
@@ -60,20 +57,20 @@ impl RuntimeContextHandle {
 
     pub fn begin_request(&self) -> Result<RuntimeRequestPermit<'_>, ServiceError> {
         if !self.accepting.load(Ordering::Acquire) {
-            return Err(
-                ServiceError::classified(8092, "runtime is not accepting requests")
-                    .expect("assigned error"),
-            );
+            return Err(ServiceError::assigned(
+                8092,
+                "runtime is not accepting requests",
+            ));
         }
         let mut count = self
             .in_flight
             .lock()
             .map_err(|_| ServiceError::internal("runtime admission lock failed"))?;
         if !self.accepting.load(Ordering::Acquire) {
-            return Err(
-                ServiceError::classified(8092, "runtime is not accepting requests")
-                    .expect("assigned error"),
-            );
+            return Err(ServiceError::assigned(
+                8092,
+                "runtime is not accepting requests",
+            ));
         }
         *count += 1;
         Ok(RuntimeRequestPermit { handle: self })
@@ -205,7 +202,7 @@ impl RuntimeServiceContext {
         truelog_client: Option<&Path>,
     ) -> Result<(), ServiceError> {
         self.audit = Mutex::new(ProductionAuditRecorder::open(
-            &self.database_path(),
+            &self.database_path()?,
             database_key,
             enabled,
             truelog_client,
@@ -213,11 +210,11 @@ impl RuntimeServiceContext {
         Ok(())
     }
 
-    fn database_path(&self) -> std::path::PathBuf {
+    fn database_path(&self) -> Result<std::path::PathBuf, ServiceError> {
         self.tokens
             .lock()
-            .expect("token repository lock")
-            .database_path()
+            .map_err(|_| ServiceError::internal("token repository lock failed"))
+            .map(|repository| repository.database_path())
     }
 
     pub fn authorize_certificate(
@@ -253,40 +250,36 @@ impl RuntimeServiceContext {
                 ServiceError::client_registration_inactive("client registration is not active")
             })?;
         if !client.transports.iter().any(|value| value == transport) {
-            return Err(
-                ServiceError::classified(8023, "connection transport is not authorized")
-                    .expect("8023 must be assigned"),
-            );
+            return Err(ServiceError::assigned(
+                8023,
+                "connection transport is not authorized",
+            ));
         }
         if transport == "UNIX" {
-            let (uid, gid) = peer.ok_or_else(|| {
-                ServiceError::classified(8023, "Unix peer identity is unavailable")
-                    .expect("8023 must be assigned")
-            })?;
+            let (uid, gid) = peer
+                .ok_or_else(|| ServiceError::assigned(8023, "Unix peer identity is unavailable"))?;
             if client.peer_uid.is_some_and(|expected| expected != uid)
                 || client.peer_gid.is_some_and(|expected| expected != gid)
                 || (client.peer_uid.is_none() && client.peer_gid.is_none())
             {
-                return Err(
-                    ServiceError::classified(8023, "Unix peer identity is not authorized")
-                        .expect("8023 must be assigned"),
-                );
+                return Err(ServiceError::assigned(
+                    8023,
+                    "Unix peer identity is not authorized",
+                ));
             }
         } else {
-            let source = source.ok_or_else(|| {
-                ServiceError::classified(8023, "connection source is unavailable")
-                    .expect("8023 must be assigned")
-            })?;
+            let source = source
+                .ok_or_else(|| ServiceError::assigned(8023, "connection source is unavailable"))?;
             let source_policy = crate::connection_policy::ConnectionPolicy::new(
                 &client.allowed_source_cidr,
                 client.keep_alive_timeout,
                 client.keep_alive_timeout,
             )?;
             if !source_policy.permits(source) {
-                return Err(
-                    ServiceError::classified(8023, "connection source is not authorized")
-                        .expect("8023 must be assigned"),
-                );
+                return Err(ServiceError::assigned(
+                    8023,
+                    "connection source is not authorized",
+                ));
             }
         }
         let service = registry.authorize_service_by_apikey(
@@ -295,19 +288,17 @@ impl RuntimeServiceContext {
             request.operation_class(),
         )?;
         let certificate_not_after = if transport == "MTLS" {
-            let certificate = certificate.ok_or_else(|| {
-                ServiceError::classified(8010, "client certificate is required")
-                    .expect("8010 must be assigned")
-            })?;
+            let certificate = certificate
+                .ok_or_else(|| ServiceError::assigned(8010, "client certificate is required"))?;
             let expected_uri = match request.operation_class() {
                 OperationClass::Read => "urn:autobricks:jwt:read",
                 OperationClass::Write => "urn:autobricks:jwt:write",
             };
             if certificate.uri_san != expected_uri {
-                return Err(
-                    ServiceError::classified(8021, "certificate operation URI is invalid")
-                        .expect("8021 must be assigned"),
-                );
+                return Err(ServiceError::assigned(
+                    8021,
+                    "certificate operation URI is invalid",
+                ));
             }
             self.certificates
                 .lock()
@@ -321,10 +312,7 @@ impl RuntimeServiceContext {
             Some(certificate.not_after)
         } else {
             if certificate.is_some() {
-                return Err(
-                    ServiceError::classified(8023, "connection identity changed")
-                        .expect("8023 must be assigned"),
-                );
+                return Err(ServiceError::assigned(8023, "connection identity changed"));
             }
             None
         };
@@ -344,15 +332,13 @@ impl RuntimeServiceContext {
         now: u64,
     ) -> Result<RuntimeAuthorization, ServiceError> {
         if transport != "MTLS" {
-            return Err(
-                ServiceError::classified(8010, "mTLS client certificate is required")
-                    .expect("assigned error"),
-            );
+            return Err(ServiceError::assigned(
+                8010,
+                "mTLS client certificate is required",
+            ));
         }
-        let certificate = certificate.ok_or_else(|| {
-            ServiceError::classified(8010, "mTLS client certificate is required")
-                .expect("assigned error")
-        })?;
+        let certificate = certificate
+            .ok_or_else(|| ServiceError::assigned(8010, "mTLS client certificate is required"))?;
         let registry = self
             .registry
             .lock()
@@ -367,36 +353,33 @@ impl RuntimeServiceContext {
         if !client.transports.iter().any(|value| value == "MTLS")
             || client.operation_class != request.operation_class
         {
-            return Err(ServiceError::classified(
+            return Err(ServiceError::assigned(
                 8028,
                 "certificate client binding does not match",
-            )
-            .expect("assigned error"));
+            ));
         }
-        let source = source.ok_or_else(|| {
-            ServiceError::classified(8023, "connection source is unavailable")
-                .expect("assigned error")
-        })?;
+        let source = source
+            .ok_or_else(|| ServiceError::assigned(8023, "connection source is unavailable"))?;
         let policy = crate::connection_policy::ConnectionPolicy::new(
             &client.allowed_source_cidr,
             client.keep_alive_timeout,
             client.keep_alive_timeout,
         )?;
         if !policy.permits(source) {
-            return Err(
-                ServiceError::classified(8023, "connection source is not authorized")
-                    .expect("assigned error"),
-            );
+            return Err(ServiceError::assigned(
+                8023,
+                "connection source is not authorized",
+            ));
         }
         let expected_uri = match request.operation_class {
             OperationClass::Read => "urn:autobricks:jwt:read",
             OperationClass::Write => "urn:autobricks:jwt:write",
         };
         if certificate.uri_san != expected_uri {
-            return Err(
-                ServiceError::classified(8021, "certificate operation URI is invalid")
-                    .expect("assigned error"),
-            );
+            return Err(ServiceError::assigned(
+                8021,
+                "certificate operation URI is invalid",
+            ));
         }
         let service = registry.authorize_service_by_apikey(
             request.client_id,
@@ -437,7 +420,7 @@ impl RuntimeServiceContext {
         let worker = SessionCacheWorker::start_rebuilt(
             executable,
             cache_library,
-            &self.database_path(),
+            &self.database_path()?,
             database_key,
             &records,
         )?;

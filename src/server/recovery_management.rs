@@ -120,13 +120,9 @@ impl ProductionRecoveryManagement {
                 &self.configuration.database_path,
                 &key,
             )
-            .map_err(|_| {
-                ServiceError::classified(8081, "audit Drain database operation failed")
-                    .expect("assigned error")
-            })?;
+            .map_err(|_| ServiceError::assigned(8081, "audit Drain database operation failed"))?;
             audits.drain_expired(now).map_err(|_| {
-                ServiceError::classified(8081, "audit Drain database operation failed")
-                    .expect("assigned error")
+                ServiceError::assigned(8081, "audit Drain database operation failed")
             })?
         } else {
             0

@@ -25,6 +25,13 @@ impl ServiceError {
             .ok_or("error code is not assigned by ERROR.md")
     }
 
+    pub fn assigned(code: u16, message: impl Into<Cow<'static, str>>) -> Self {
+        let message = message.into();
+        definition(code)
+            .map(|definition| Self::from_definition(definition, message))
+            .unwrap_or_else(|| Self::internal("assigned error code is unavailable"))
+    }
+
     pub fn internal(message: impl Into<Cow<'static, str>>) -> Self {
         Self::new(8000, "INTERNAL_ERROR", message)
     }
@@ -141,8 +148,7 @@ mod tests {
     #[test]
     fn constructs_every_assigned_error_and_rejects_reserved_codes() {
         for definition in ERROR_REGISTRY {
-            let error = ServiceError::classified(definition.code, "safe test message")
-                .expect("assigned error must be constructible");
+            let error = ServiceError::assigned(definition.code, "safe test message");
             assert_eq!(error.code(), definition.code);
             assert_eq!(error.name(), definition.name);
             assert_eq!(error.public_message(), "safe test message");

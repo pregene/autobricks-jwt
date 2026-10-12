@@ -230,7 +230,7 @@ fn install_server_identity(input: &SetupInput, pki: &Path) -> Result<(), String>
     let user = console_user()?;
     let staging = temporary_directory()?;
     let result = (|| {
-        run_quiet(Command::new("/usr/sbin/chown").args([&user, staging.to_str().unwrap()]))?;
+        run_quiet(Command::new("/usr/sbin/chown").arg(&user).arg(&staging))?;
         let request = json!({
             "issuer": input.pki_issuer,
             "profile": {"kind": "server", "common_name": format!("jwt-{}", random_hex(6)?), "ip_addresses": [input.server_certificate_ip]}
@@ -269,7 +269,8 @@ fn install_server_identity(input: &SetupInput, pki: &Path) -> Result<(), String>
                 .args(["-H", "-u", &user])
                 .arg(pki)
                 .arg("download")
-                .args([&fingerprint, target.to_str().unwrap()]),
+                .arg(&fingerprint)
+                .arg(&target),
         )?;
         let archive = staging.join("server.tar.gz");
         if !archive.is_file() {
@@ -284,14 +285,11 @@ fn install_server_identity(input: &SetupInput, pki: &Path) -> Result<(), String>
         let issued_certificate = extracted.join("certificate.pem");
         let issued_key = extracted.join("private-key.pem");
         let issued_chain = extracted.join("trust-chain");
-        let reported = run(Command::new("/usr/bin/openssl").args([
-            "x509",
-            "-in",
-            issued_certificate.to_str().unwrap(),
-            "-noout",
-            "-fingerprint",
-            "-sha256",
-        ]))?;
+        let reported = run(Command::new("/usr/bin/openssl")
+            .arg("x509")
+            .arg("-in")
+            .arg(&issued_certificate)
+            .args(["-noout", "-fingerprint", "-sha256"]))?;
         let reported = String::from_utf8_lossy(&reported.stdout)
             .split_once('=')
             .map(|(_, value)| value.replace(':', "").trim().to_ascii_lowercase())
@@ -301,28 +299,26 @@ fn install_server_identity(input: &SetupInput, pki: &Path) -> Result<(), String>
                 "Downloaded certificate fingerprint does not match the issued certificate.",
             ));
         }
-        let certificate_key = run(Command::new("/usr/bin/openssl").args([
-            "x509",
-            "-in",
-            issued_certificate.to_str().unwrap(),
-            "-pubkey",
-            "-noout",
-        ]))?;
-        let private_public = run(Command::new("/usr/bin/openssl").args([
-            "pkey",
-            "-in",
-            issued_key.to_str().unwrap(),
-            "-pubout",
-        ]))?;
+        let certificate_key = run(Command::new("/usr/bin/openssl")
+            .arg("x509")
+            .arg("-in")
+            .arg(&issued_certificate)
+            .args(["-pubkey", "-noout"]))?;
+        let private_public = run(Command::new("/usr/bin/openssl")
+            .arg("pkey")
+            .arg("-in")
+            .arg(&issued_key)
+            .arg("-pubout"))?;
         if certificate_key.stdout != private_public.stdout {
             return Err(fail("Downloaded certificate and private key do not match."));
         }
-        run_quiet(Command::new("/usr/bin/openssl").args([
-            "verify",
-            "-CAfile",
-            issued_chain.to_str().unwrap(),
-            issued_certificate.to_str().unwrap(),
-        ]))?;
+        run_quiet(
+            Command::new("/usr/bin/openssl")
+                .arg("verify")
+                .arg("-CAfile")
+                .arg(&issued_chain)
+                .arg(&issued_certificate),
+        )?;
         write_private(
             &input.server_certificate,
             &fs::read(&issued_certificate).map_err(|error| fail(error.to_string()))?,
@@ -425,10 +421,10 @@ fn setup() -> Result<String, String> {
     .find(|path| Path::new(path).is_file())
     .ok_or_else(|| fail("SoftHSM2 PKCS#11 module is unavailable."))?;
     for (path, mode) in [
-        (CONFIG_ROOT, 0o750),
-        (STATE_ROOT, 0o750),
-        (input.backup_directory.to_str().unwrap(), 0o750),
-        (TOKEN_DIRECTORY, 0o700),
+        (Path::new(CONFIG_ROOT), 0o750),
+        (Path::new(STATE_ROOT), 0o750),
+        (input.backup_directory.as_path(), 0o750),
+        (Path::new(TOKEN_DIRECTORY), 0o700),
     ] {
         fs::create_dir_all(path).map_err(|error| fail(error.to_string()))?;
         fs::set_permissions(path, Permissions::from_mode(mode))
@@ -492,7 +488,10 @@ fn setup() -> Result<String, String> {
         let missing = required.iter().any(|path| !path.is_file())
             || (transports.contains("MTLS") && !input.client_trust_chain.is_file());
         if missing {
-            install_server_identity(&input, pki.as_ref().unwrap())?;
+            let pki = pki
+                .as_deref()
+                .ok_or_else(|| fail("Autobricks PKI client is unavailable."))?;
+            install_server_identity(&input, pki)?;
         }
     }
     let yes_no = |value| if value { "true" } else { "false" };
@@ -576,7 +575,8 @@ fn setup() -> Result<String, String> {
     write_private(&new_config, format!("{}\n", lines.join("\n")).as_bytes())?;
     run_quiet(
         Command::new("/usr/local/sbin/ab-jwtd")
-            .args(["--check-config", new_config.to_str().unwrap()]),
+            .arg("--check-config")
+            .arg(&new_config),
     )?;
     fs::rename(&new_config, CONFIG).map_err(|error| fail(error.to_string()))?;
     let database = Path::new(STATE_ROOT).join("autobricks-jwt.db");

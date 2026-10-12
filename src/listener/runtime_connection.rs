@@ -104,7 +104,10 @@ where
                 opened_at,
                 maximum_lifetime,
             )?;
-            lease.as_mut().expect("lease created").begin_request(now)?;
+            lease
+                .as_mut()
+                .ok_or_else(|| ServiceError::internal("connection lease is unavailable"))?
+                .begin_request(now)?;
             let response = serde_json::to_vec(&json!({
                 "status": "SUCCESS",
                 "operation": "CERTIFICATE_ACTIVATE",
@@ -145,7 +148,10 @@ where
             maximum_lifetime,
         )?;
         let now = clock();
-        lease.as_mut().expect("lease created").begin_request(now)?;
+        lease
+            .as_mut()
+            .ok_or_else(|| ServiceError::internal("connection lease is unavailable"))?
+            .begin_request(now)?;
         let response = active_context.dispatch_frame(&frame, now)?;
         stream
             .write_all(&(response.len() as u32).to_be_bytes())
@@ -214,7 +220,7 @@ fn bind_connection(
     if lease.is_none() {
         let source = identity
             .source
-            .unwrap_or_else(|| "127.0.0.1".parse().expect("loopback"));
+            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
         let cidr = if source.is_ipv4() {
             format!("{source}/32")
         } else {
@@ -256,5 +262,5 @@ fn write_client_error<S: Write>(
 }
 
 fn classified(code: u16, message: &'static str) -> ServiceError {
-    ServiceError::classified(code, message).expect("assigned runtime error")
+    ServiceError::assigned(code, message)
 }

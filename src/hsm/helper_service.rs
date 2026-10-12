@@ -125,5 +125,5 @@ fn decode_key(value: Option<&str>) -> Result<[u8; 32], ServiceError> {
 }
 
 fn hsm_error(message: &'static str) -> ServiceError {
-    ServiceError::classified(8085, message).expect("8085 assigned")
+    ServiceError::assigned(8085, message)
 }

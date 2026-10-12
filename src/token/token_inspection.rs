@@ -223,19 +223,15 @@ impl<'a> TokenInspectionService<'a> {
         audit: &mut A,
     ) -> Result<TokenInspectionResult, ServiceError> {
         if peer_uid != 0 {
-            return Err(ServiceError::classified(
+            return Err(ServiceError::assigned(
                 8031,
                 "privileged token inspection requires root",
-            )
-            .expect("8031 must be assigned"));
+            ));
         }
         let record = self
             .tokens
             .load_by_correlation(request_id, token_id)?
-            .ok_or_else(|| {
-                ServiceError::classified(8060, "session is not found or expired")
-                    .expect("8060 must be assigned")
-            })?;
+            .ok_or_else(|| ServiceError::assigned(8060, "session is not found or expired"))?;
         let payload = record.token.inspect_payload()?;
         audit.privileged_inspection(record.service_id, request_id, token_id, peer_uid, event_at)?;
         Ok(TokenInspectionResult {

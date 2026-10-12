@@ -155,8 +155,7 @@ fn to_i64(value: u64) -> Result<i64, ServiceError> {
 
 fn database_error(error: impl std::fmt::Display) -> ServiceError {
     let _ = error;
-    ServiceError::classified(8081, "activity log database operation failed")
-        .expect("8081 must be assigned")
+    ServiceError::assigned(8081, "activity log database operation failed")
 }
 
 #[cfg(test)]

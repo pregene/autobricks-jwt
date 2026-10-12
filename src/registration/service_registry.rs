@@ -484,7 +484,7 @@ impl ServiceRegistry {
         }
         self.services
             .get_mut(&credential.service_id)
-            .expect("registered service exists")
+            .ok_or_else(|| ServiceError::internal("registered service state is unavailable"))?
             .database_source = Some(plan.clone());
         Ok((credential, plan))
     }
@@ -633,11 +633,10 @@ impl ServiceRegistry {
             ServiceError::client_registration_inactive("client registration is not active")
         })?;
         if client.operation_class != required_operation {
-            return Err(ServiceError::classified(
+            return Err(ServiceError::assigned(
                 8031,
                 "APIKEY does not permit the requested operation",
-            )
-            .expect("8031 must be assigned"));
+            ));
         }
 
         let mut authorized = None;
@@ -666,10 +665,7 @@ impl ServiceRegistry {
                 });
             }
         }
-        authorized.ok_or_else(|| {
-            ServiceError::classified(8030, "APIKEY authentication failed")
-                .expect("8030 must be assigned")
-        })
+        authorized.ok_or_else(|| ServiceError::assigned(8030, "APIKEY authentication failed"))
     }
 
     pub fn service_count(&self, client_id: Uuid) -> usize {
@@ -693,10 +689,10 @@ impl ServiceRegistry {
         {
             Ok(())
         } else {
-            Err(
-                ServiceError::classified(8031, "READ service does not permit the token issuer")
-                    .expect("8031 must be assigned"),
-            )
+            Err(ServiceError::assigned(
+                8031,
+                "READ service does not permit the token issuer",
+            ))
         }
     }
 
@@ -736,11 +732,10 @@ impl ServiceRegistry {
         if let Some(repository) = &mut self.repository {
             let deleted = repository.delete_client_cascade(client_id, unix_time())?;
             if deleted != service_ids.len() {
-                return Err(ServiceError::classified(
+                return Err(ServiceError::assigned(
                     8081,
                     "registration cascade count does not match active state",
-                )
-                .expect("8081 must be assigned"));
+                ));
             }
         }
         self.clients.remove(&client_id);
@@ -770,7 +765,7 @@ fn derive_apikey_verifier(
     let mut verifier = [0_u8; APIKEY_VERIFIER_LENGTH];
     pbkdf2::derive(
         pbkdf2::PBKDF2_HMAC_SHA256,
-        NonZeroU32::new(APIKEY_ITERATIONS).expect("APIKEY iterations must be nonzero"),
+        NonZeroU32::new(APIKEY_ITERATIONS).unwrap_or(NonZeroU32::MIN),
         salt,
         apikey.as_bytes(),
         &mut verifier,

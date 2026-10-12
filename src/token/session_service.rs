@@ -319,7 +319,7 @@ fn is_reserved(field: &str) -> bool {
 }
 
 fn classified(code: u16, message: &'static str) -> ServiceError {
-    ServiceError::classified(code, message).expect("ERROR.md code must be assigned")
+    ServiceError::assigned(code, message)
 }
 
 fn session_missing() -> ServiceError {

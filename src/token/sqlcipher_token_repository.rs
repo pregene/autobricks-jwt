@@ -549,13 +549,11 @@ fn unsigned_time(value: i64) -> Result<u64, ServiceError> {
 }
 
 fn database_error(error: impl std::fmt::Display) -> ServiceError {
-    ServiceError::classified(8080, format!("SQLCipher token repository error: {error}"))
-        .expect("8080 must be assigned")
+    ServiceError::assigned(8080, format!("SQLCipher token repository error: {error}"))
 }
 
 fn session_missing() -> ServiceError {
-    ServiceError::classified(8060, "session is not found or expired")
-        .expect("8060 must be assigned")
+    ServiceError::assigned(8060, "session is not found or expired")
 }
 
 #[cfg(test)]

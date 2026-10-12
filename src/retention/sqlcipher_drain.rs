@@ -47,8 +47,7 @@ impl SqlCipherDrainScheduler {
 }
 
 fn audit_error(_: String) -> ServiceError {
-    ServiceError::classified(8081, "audit Drain database operation failed")
-        .expect("8081 must be assigned")
+    ServiceError::assigned(8081, "audit Drain database operation failed")
 }
 
 #[cfg(test)]

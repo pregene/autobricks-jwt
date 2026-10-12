@@ -755,7 +755,9 @@ fn draw(title: &str, records: &[Value], selected: usize) {
 
 fn line(y: i32, x: i32, value: &str) {
     let sanitized = value.replace('\0', "?");
-    let value = CString::new(sanitized).expect("NUL removed");
+    let Ok(value) = CString::new(sanitized) else {
+        return;
+    };
     unsafe {
         mvaddnstr(
             y,

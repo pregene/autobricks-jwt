@@ -186,7 +186,11 @@ impl DatabaseSourcePlan {
                 "DATABASE subject lookup did not return exactly one record",
             ));
         }
-        Ok(records.into_iter().next().expect("one record exists"))
+        records.into_iter().next().ok_or_else(|| {
+            ServiceError::source_data_unavailable(
+                "DATABASE subject lookup did not return exactly one record",
+            )
+        })
     }
 
     pub fn execute_registered_update<C: DatabaseSourceCache>(
@@ -196,8 +200,7 @@ impl DatabaseSourcePlan {
     ) -> Result<(), ServiceError> {
         let update = &self.cache_definition_json["update"];
         if update["query"].as_str().is_none_or(str::is_empty) {
-            return Err(ServiceError::classified(8052, "UPDATE is not configured")
-                .expect("8052 must be assigned"));
+            return Err(ServiceError::assigned(8052, "UPDATE is not configured"));
         }
         cache.update(&self.cache_id.to_string(), complete_record)
     }

@@ -337,11 +337,11 @@ impl SoftHsm2KeyStore {
 }
 
 fn hsm_unavailable(message: &'static str) -> ServiceError {
-    ServiceError::classified(8085, message).expect("8085 assigned")
+    ServiceError::assigned(8085, message)
 }
 
 fn key_failure(message: &'static str) -> ServiceError {
-    ServiceError::classified(8086, message).expect("8086 assigned")
+    ServiceError::assigned(8086, message)
 }
 
 #[cfg(test)]

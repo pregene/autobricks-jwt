@@ -226,10 +226,10 @@ impl IssuedToken {
     ) -> Result<Self, ServiceError> {
         let mut payload = decrypt(&self.token, &self.key)?;
         if now < payload.nbf || now >= payload.exp {
-            return Err(
-                ServiceError::classified(8060, "session is not found or expired")
-                    .expect("8060 must be assigned"),
-            );
+            return Err(ServiceError::assigned(
+                8060,
+                "session is not found or expired",
+            ));
         }
         for (field, value) in updates {
             if field.is_empty() {

@@ -64,10 +64,7 @@ impl<'a> FederatedSessionValidator<'a> {
         cache: &mut C,
     ) -> Result<FederatedSessionResult, ServiceError> {
         if request.identity_fields.is_empty() {
-            return Err(
-                ServiceError::classified(8063, "identity field list is empty")
-                    .expect("8063 must be assigned"),
-            );
+            return Err(ServiceError::assigned(8063, "identity field list is empty"));
         }
         let response = self.sessions.query_cached(
             JwtQueryRequest {
@@ -83,10 +80,9 @@ impl<'a> FederatedSessionValidator<'a> {
         )?;
         Ok(FederatedSessionResult {
             token_id: response.token_id,
-            identity: response.fields.ok_or_else(|| {
-                ServiceError::classified(8065, "identity fields are unavailable")
-                    .expect("8065 must be assigned")
-            })?,
+            identity: response
+                .fields
+                .ok_or_else(|| ServiceError::assigned(8065, "identity fields are unavailable"))?,
         })
     }
 }

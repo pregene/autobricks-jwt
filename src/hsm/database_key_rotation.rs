@@ -590,13 +590,13 @@ fn configuration(message: &'static str) -> ServiceError {
     ServiceError::configuration_invalid(message)
 }
 fn database_failure(message: &'static str) -> ServiceError {
-    ServiceError::classified(8081, message).expect("8081 assigned")
+    ServiceError::assigned(8081, message)
 }
 fn key_failure(message: &'static str) -> ServiceError {
-    ServiceError::classified(8086, message).expect("8086 assigned")
+    ServiceError::assigned(8086, message)
 }
 fn hsm_failure(message: &'static str) -> ServiceError {
-    ServiceError::classified(8085, message).expect("8085 assigned")
+    ServiceError::assigned(8085, message)
 }
 
 #[cfg(test)]

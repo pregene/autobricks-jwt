@@ -220,7 +220,7 @@ fn required(value: &Option<PathBuf>) -> Result<&Path, ServiceError> {
 }
 
 fn provisioning_failed() -> ServiceError {
-    ServiceError::classified(8044, "server certificate renewal failed").expect("assigned error")
+    ServiceError::assigned(8044, "server certificate renewal failed")
 }
 
 #[cfg(test)]

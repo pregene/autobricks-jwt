@@ -389,10 +389,10 @@ fn invalid() -> ServiceError {
     ServiceError::configuration_invalid("direct database configuration is invalid")
 }
 fn unavailable() -> ServiceError {
-    ServiceError::classified(8080, "direct database is unavailable").expect("8080 assigned")
+    ServiceError::assigned(8080, "direct database is unavailable")
 }
 fn operation() -> ServiceError {
-    ServiceError::classified(8081, "direct database operation failed").expect("8081 assigned")
+    ServiceError::assigned(8081, "direct database operation failed")
 }
 
 #[cfg(test)]

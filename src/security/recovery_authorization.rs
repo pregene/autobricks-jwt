@@ -38,7 +38,10 @@ impl GeneratedRecoveryKey {
 impl RecoveryKeyVerifier {
     fn from_key_bytes(key: &[u8; RECOVERY_KEY_BYTES]) -> Self {
         let value = digest(&SHA256, key);
-        Self(value.as_ref().try_into().expect("SHA-256 is 32 bytes"))
+        match <&[u8; VERIFIER_BYTES]>::try_from(value.as_ref()) {
+            Ok(bytes) => Self(*bytes),
+            Err(_) => Self([0_u8; VERIFIER_BYTES]),
+        }
     }
 
     pub fn from_bytes(bytes: [u8; VERIFIER_BYTES]) -> Self {
@@ -171,7 +174,7 @@ impl RecoveryAuthorizationRepository {
 }
 
 fn storage_failure() -> ServiceError {
-    ServiceError::classified(8081, "recovery authorization storage failed").expect("assigned error")
+    ServiceError::assigned(8081, "recovery authorization storage failed")
 }
 
 fn encode_hex(bytes: &[u8]) -> String {

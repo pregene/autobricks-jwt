@@ -154,7 +154,9 @@ impl<'a> RuntimeDispatcher<'a> {
                 ServiceError::invalid_request("runtime request JSON is invalid"),
             ),
         };
-        serde_json::to_vec(&response).expect("runtime response serialization cannot fail")
+        serde_json::to_vec(&response).unwrap_or_else(|_| {
+            br#"{\"status\":\"ERROR\",\"operation\":\"UNKNOWN\",\"error\":{\"error_code\":8000,\"error_name\":\"INTERNAL_ERROR\",\"message\":\"request could not be completed\"}}"#.to_vec()
+        })
     }
 
     pub fn dispatch(&mut self, request: RuntimeRequest, now: u64) -> RuntimeResponse {
@@ -178,11 +180,10 @@ impl<'a> RuntimeDispatcher<'a> {
                             IssuanceService::new(self.registry, self.tokens, self.token_lifetime)?;
                         if registered.source_type.as_deref() == Some("DATABASE") {
                             let caches = self.database_caches.ok_or_else(|| {
-                                ServiceError::classified(
+                                ServiceError::assigned(
                                     8052,
                                     "DATABASE Cache runtime is unavailable",
                                 )
-                                .expect("8052 must be assigned")
                             })?;
                             issuance.create_from_database(
                                 request,

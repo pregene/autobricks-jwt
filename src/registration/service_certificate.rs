@@ -852,7 +852,7 @@ fn operation_name(operation: OperationClass) -> &'static str {
     }
 }
 fn classified(code: u16, message: &'static str) -> ServiceError {
-    ServiceError::classified(code, message).expect("ERROR.md code must be assigned")
+    ServiceError::assigned(code, message)
 }
 fn database_error(_: impl std::fmt::Display) -> ServiceError {
     classified(8081, "certificate database operation failed")

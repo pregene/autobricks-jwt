@@ -53,10 +53,10 @@ impl WireResponse {
             || bytes.len() > MAX_MANAGEMENT_ATTACHMENT
             || !safe_file_name(&file_name)
         {
-            return Err(
-                ServiceError::classified(8044, "certificate package delivery is invalid")
-                    .expect("assigned error"),
-            );
+            return Err(ServiceError::assigned(
+                8044,
+                "certificate package delivery is invalid",
+            ));
         }
         let sha256 = ring::digest::digest(&ring::digest::SHA256, &bytes)
             .as_ref()
@@ -152,16 +152,16 @@ impl BrokerPolicy {
         request: &ManagementRequest,
     ) -> Result<(), ServiceError> {
         if !self.allowed_uids.contains(&peer_uid) && !self.allowed_gids.contains(&peer_gid) {
-            return Err(
-                ServiceError::classified(8030, "management peer is not authorized")
-                    .expect("8030 must be assigned"),
-            );
+            return Err(ServiceError::assigned(
+                8030,
+                "management peer is not authorized",
+            ));
         }
         if !self.allowed_operations.contains(request.operation_name()) {
-            return Err(
-                ServiceError::classified(8031, "management operation is not authorized")
-                    .expect("8031 must be assigned"),
-            );
+            return Err(ServiceError::assigned(
+                8031,
+                "management operation is not authorized",
+            ));
         }
         Ok(())
     }
@@ -234,13 +234,10 @@ pub fn serve_runtime_server(
                                     .unwrap_or_else(|error| error_response(error).into())
                             }
                             (None, None) => response.into(),
-                            _ => error_response(
-                                ServiceError::classified(
-                                    8044,
-                                    "certificate package delivery is invalid",
-                                )
-                                .expect("assigned error"),
-                            )
+                            _ => error_response(ServiceError::assigned(
+                                8044,
+                                "certificate package delivery is invalid",
+                            ))
                             .into(),
                         }
                     }
@@ -337,10 +334,10 @@ pub fn serve_broker_with_policy(
                 ))
                 .into(),
             },
-            None => error_response(
-                ServiceError::classified(8030, "management peer is not authorized")
-                    .expect("8030 must be assigned"),
-            )
+            None => error_response(ServiceError::assigned(
+                8030,
+                "management peer is not authorized",
+            ))
             .into(),
         };
         write_response(&mut stream, &response)?;
@@ -364,16 +361,18 @@ pub fn request_with_attachment(
     request: &ManagementRequest,
 ) -> Result<(ManagementResponse, Option<ReceivedAttachment>), String> {
     let wire = request_wire(socket_path, request)?;
-    let attachment = wire.attachment.map(|bytes| ReceivedAttachment {
-        file_name: wire
-            .response
-            .attachment
-            .as_ref()
-            .expect("validated attachment metadata")
-            .file_name
-            .clone(),
-        bytes,
-    });
+    let attachment = match wire.attachment {
+        Some(bytes) => {
+            let metadata = wire.response.attachment.as_ref().ok_or_else(|| {
+                "management response attachment metadata is unavailable".to_owned()
+            })?;
+            Some(ReceivedAttachment {
+                file_name: metadata.file_name.clone(),
+                bytes,
+            })
+        }
+        None => None,
+    };
     Ok((wire.response, attachment))
 }
 
@@ -440,10 +439,10 @@ where
         if peer_uid(&stream) != Some(expected_peer_uid) {
             write_response(
                 &mut stream,
-                &error_response(
-                    ServiceError::classified(8030, "management peer is not authorized")
-                        .expect("8030 must be assigned"),
-                )
+                &error_response(ServiceError::assigned(
+                    8030,
+                    "management peer is not authorized",
+                ))
                 .into(),
             )?;
             continue;
@@ -492,13 +491,14 @@ fn process_server_request(
                     peer_uid,
                     peer_gid,
                 )?;
-                Ok(json!(
-                    registry
-                        .clients()
-                        .into_iter()
-                        .find(|client| client.client_id == client_id)
-                        .expect("registered client must exist")
-                ))
+                let client = registry
+                    .clients()
+                    .into_iter()
+                    .find(|client| client.client_id == client_id)
+                    .ok_or_else(|| {
+                        ServiceError::internal("registered client state is unavailable")
+                    })?;
+                Ok(json!(client))
             }
             ManagementRequest::ListClients => Ok(json!(registry.clients())),
             ManagementRequest::ModifyClient { client_id, update } => {

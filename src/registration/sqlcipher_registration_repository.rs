@@ -496,7 +496,7 @@ fn to_i64(value: u64) -> Result<i64, ServiceError> {
 }
 
 fn classified(code: u16, message: impl Into<std::borrow::Cow<'static, str>>) -> ServiceError {
-    ServiceError::classified(code, message).expect("ERROR.md code must be assigned")
+    ServiceError::assigned(code, message)
 }
 
 fn database_unavailable(error: rusqlite::Error) -> ServiceError {

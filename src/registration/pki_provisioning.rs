@@ -475,8 +475,7 @@ fn valid_fingerprint(value: &str) -> bool {
 }
 
 fn provisioning_failed() -> ServiceError {
-    ServiceError::classified(8044, "service certificate provisioning failed")
-        .expect("8044 must be assigned")
+    ServiceError::assigned(8044, "service certificate provisioning failed")
 }
 
 #[cfg(test)]

@@ -126,7 +126,7 @@ fn prefix_mask(prefix: u8, bits: u8) -> u128 {
 }
 
 fn classified(code: u16, message: &'static str) -> ServiceError {
-    ServiceError::classified(code, message).expect("ERROR.md code must be assigned")
+    ServiceError::assigned(code, message)
 }
 
 #[cfg(test)]

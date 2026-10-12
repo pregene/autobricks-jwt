@@ -66,20 +66,21 @@ impl CertificateManagement for ProductionCertificateManagement {
             return None;
         }
         let result = (|| {
-            let pki_client = self.configuration.pki_client.as_ref().ok_or_else(|| {
-                ServiceError::classified(8044, "PKI client is unavailable").expect("assigned error")
-            })?;
-            let issuer = self.configuration.pki_issuer.as_deref().ok_or_else(|| {
-                ServiceError::classified(8044, "PKI issuer is unavailable").expect("assigned error")
-            })?;
+            let pki_client = self
+                .configuration
+                .pki_client
+                .as_ref()
+                .ok_or_else(|| ServiceError::assigned(8044, "PKI client is unavailable"))?;
+            let issuer = self
+                .configuration
+                .pki_issuer
+                .as_deref()
+                .ok_or_else(|| ServiceError::assigned(8044, "PKI issuer is unavailable"))?;
             let staging = self
                 .configuration
                 .pki_staging_directory
                 .as_deref()
-                .ok_or_else(|| {
-                    ServiceError::classified(8044, "PKI staging is unavailable")
-                        .expect("assigned error")
-                })?;
+                .ok_or_else(|| ServiceError::assigned(8044, "PKI staging is unavailable"))?;
             let credential = {
                 let mut registry = registry
                     .lock()

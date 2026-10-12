@@ -155,10 +155,10 @@ impl SessionCache for SessionCacheWorker {
         if records.len() == 1 {
             Ok(())
         } else {
-            Err(
-                ServiceError::classified(8060, "session is not found or expired")
-                    .expect("8060 must be assigned"),
-            )
+            Err(ServiceError::assigned(
+                8060,
+                "session is not found or expired",
+            ))
         }
     }
 
@@ -205,6 +205,5 @@ fn encode_key(key: &[u8; 32]) -> String {
 }
 
 fn database_error(error: impl std::fmt::Display) -> ServiceError {
-    ServiceError::classified(8082, format!("session Cache database error: {error}"))
-        .expect("8082 must be assigned")
+    ServiceError::assigned(8082, format!("session Cache database error: {error}"))
 }

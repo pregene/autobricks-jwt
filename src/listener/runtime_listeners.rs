@@ -150,7 +150,7 @@ impl RuntimeListenerSet {
                 Arc::clone(&accepting),
                 maximum_lifetime,
                 Arc::clone(&connection_threads),
-            ));
+            )?);
         }
         if let Some((endpoint, tls)) = self._tls.take() {
             accept_threads.push(start_tcp(
@@ -161,7 +161,7 @@ impl RuntimeListenerSet {
                 Arc::clone(&accepting),
                 maximum_lifetime,
                 Arc::clone(&connection_threads),
-            ));
+            )?);
         }
         if let Some((endpoint, tls)) = self._mtls.take() {
             let tools = certificate_tools.ok_or_else(|| {
@@ -322,12 +322,12 @@ fn start_tcp(
     accepting: Arc<AtomicBool>,
     maximum_lifetime: u64,
     connection_threads: Arc<Mutex<Vec<JoinHandle<()>>>>,
-) -> JoinHandle<()> {
+) -> Result<JoinHandle<()>, ServiceError> {
     endpoint
         .listener()
         .set_nonblocking(true)
-        .expect("validated TCP listener");
-    thread::spawn(move || {
+        .map_err(|_| ServiceError::service_unavailable("TCP listener cannot enter runtime mode"))?;
+    Ok(thread::spawn(move || {
         while accepting.load(Ordering::Acquire) {
             match endpoint.listener().accept() {
                 Ok((stream, peer)) => {
@@ -368,7 +368,7 @@ fn start_tcp(
                 Err(_) => break,
             }
         }
-    })
+    }))
 }
 
 fn retain_and_push(threads: &Arc<Mutex<Vec<JoinHandle<()>>>>, worker: JoinHandle<()>) {
@@ -433,7 +433,7 @@ fn event_time() -> String {
 }
 
 fn classified(code: u16, message: &'static str) -> ServiceError {
-    ServiceError::classified(code, message).expect("assigned secure Listener error")
+    ServiceError::assigned(code, message)
 }
 
 fn required(value: &Option<std::path::PathBuf>) -> Result<&std::path::Path, ServiceError> {

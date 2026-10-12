@@ -45,7 +45,7 @@ impl Pkcs11Module {
 }
 
 fn hsm_unavailable(message: &'static str) -> ServiceError {
-    ServiceError::classified(8085, message).expect("8085 assigned")
+    ServiceError::assigned(8085, message)
 }
 
 #[cfg(test)]

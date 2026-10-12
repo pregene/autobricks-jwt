@@ -193,3 +193,4 @@ workflow, packaging, and end-to-end restart behavior are tracked separately.
 | FTL-180 | `DONE` | Exact installed-operator UID authorization for the privileged macOS management Broker | [Installation](../INSTALL.md#macos-installation-lifecycle) |
 | FTL-181 | `DONE` | Automatic valid-issuer discovery and protected server-certificate provisioning through the installed Autobricks PKI client | [Installation](../INSTALL.md#macos-installation-lifecycle) |
 | FTL-182 | `DONE` | Independent TLS and mutual-TLS setup controls with a trailing configuration action and concise failure reporting | [Installation](../INSTALL.md#macos-installation-lifecycle) |
+| FTL-183 | `DONE` | Release panic gate rejecting panic, unwrap, expect, todo, and unimplemented paths in production library and binary targets | [Error Contract](../ERROR.md) |

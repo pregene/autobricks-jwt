@@ -60,10 +60,10 @@ impl SessionCache for AutobricksSessionCache<'_> {
         if records.len() == 1 {
             Ok(())
         } else {
-            Err(
-                ServiceError::classified(8060, "session is not found or expired")
-                    .expect("8060 must be assigned"),
-            )
+            Err(ServiceError::assigned(
+                8060,
+                "session is not found or expired",
+            ))
         }
     }
 

@@ -101,10 +101,10 @@ impl UnixSocketEndpoint {
             let mut uid: libc::uid_t = 0;
             let mut gid: libc::gid_t = 0;
             if libc::getpeereid(std::os::fd::AsRawFd::as_raw_fd(stream), &mut uid, &mut gid) != 0 {
-                return Err(
-                    ServiceError::classified(8023, "Unix peer identity is unavailable")
-                        .expect("assigned error"),
-                );
+                return Err(ServiceError::assigned(
+                    8023,
+                    "Unix peer identity is unavailable",
+                ));
             }
             Ok((uid, gid))
         }
@@ -120,10 +120,10 @@ impl UnixSocketEndpoint {
                 &mut length,
             ) != 0
             {
-                return Err(
-                    ServiceError::classified(8023, "Unix peer identity is unavailable")
-                        .expect("assigned error"),
-                );
+                return Err(ServiceError::assigned(
+                    8023,
+                    "Unix peer identity is unavailable",
+                ));
             }
             Ok((credentials.uid, credentials.gid))
         }

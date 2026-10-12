@@ -121,9 +121,10 @@ fn wait_until_ready(
             return Ok(());
         }
         if thread.as_ref().is_some_and(JoinHandle::is_finished) {
-            return thread
-                .take()
-                .expect("finished thread exists")
+            let finished = thread.take().ok_or_else(|| {
+                ServiceError::internal("privileged local service thread state is unavailable")
+            })?;
+            return finished
                 .join()
                 .map_err(|_| {
                     ServiceError::service_unavailable(

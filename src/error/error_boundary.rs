@@ -58,34 +58,24 @@ pub struct ProtocolAdmission {
 impl ProtocolAdmission {
     pub fn validate(&self, version: u16, frame_bytes: usize) -> Result<(), ServiceError> {
         if !self.accepting {
-            return Err(OwningBoundary::Runtime
-                .failure(8092, "service is shutting down")
-                .expect("owned code"));
+            return Err(OwningBoundary::Runtime.failure(8092, "service is shutting down")?);
         }
         if self.remaining_capacity == 0 {
-            return Err(OwningBoundary::Runtime
-                .failure(8093, "runtime capacity is exhausted")
-                .expect("owned code"));
+            return Err(OwningBoundary::Runtime.failure(8093, "runtime capacity is exhausted")?);
         }
         if version != self.supported_version {
-            return Err(OwningBoundary::Protocol
-                .failure(8003, "protocol version is unsupported")
-                .expect("owned code"));
+            return Err(OwningBoundary::Protocol.failure(8003, "protocol version is unsupported")?);
         }
         if frame_bytes > self.maximum_frame_bytes {
-            return Err(OwningBoundary::Protocol
-                .failure(8004, "request frame is too large")
-                .expect("owned code"));
+            return Err(OwningBoundary::Protocol.failure(8004, "request frame is too large")?);
         }
         if self.rate_remaining == 0 {
-            return Err(OwningBoundary::Protocol
-                .failure(8007, "request rate is exceeded")
-                .expect("owned code"));
+            return Err(OwningBoundary::Protocol.failure(8007, "request rate is exceeded")?);
         }
         if self.in_flight >= self.maximum_in_flight {
-            return Err(OwningBoundary::Protocol
-                .failure(8008, "in-flight request limit is exceeded")
-                .expect("owned code"));
+            return Err(
+                OwningBoundary::Protocol.failure(8008, "in-flight request limit is exceeded")?
+            );
         }
         Ok(())
     }

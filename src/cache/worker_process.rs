@@ -84,10 +84,9 @@ impl CacheWorkerSet {
     }
 
     pub fn cache_for(&self, service_id: Uuid) -> Result<&CacheWorkerProcess, ServiceError> {
-        self.workers.get(&service_id).ok_or_else(|| {
-            ServiceError::classified(8052, "DATABASE Cache worker is unavailable")
-                .expect("8052 must be assigned")
-        })
+        self.workers
+            .get(&service_id)
+            .ok_or_else(|| ServiceError::assigned(8052, "DATABASE Cache worker is unavailable"))
     }
 
     pub fn worker_count(&self) -> usize {
