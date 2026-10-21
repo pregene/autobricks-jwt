@@ -37,13 +37,6 @@ struct PkiCertificate {
     fingerprint: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct PkiRenewResponse {
-    renewed: bool,
-    fingerprint: String,
-    previous_fingerprint: Option<String>,
-}
-
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct ProvisionedCertificate {
     pub fingerprint: String,
@@ -58,13 +51,6 @@ pub struct VerifiedCertificatePackage {
     pub metadata: CertificateMetadata,
     pub archive_name: String,
     pub archive: Vec<u8>,
-}
-
-pub struct VerifiedServerCertificatePackage {
-    pub fingerprint: String,
-    pub certificate: Vec<u8>,
-    pub private_key: Vec<u8>,
-    pub trust_chain: Vec<u8>,
 }
 
 pub struct PkiProvisioner {
@@ -167,141 +153,6 @@ impl PkiProvisioner {
         let result = verify_downloaded_package(&provisioned, staging_directory, tools);
         let _ = fs::remove_file(&provisioned.download_file);
         result
-    }
-
-    pub fn renew_and_download(
-        &self,
-        current_fingerprint: &str,
-        target_name: &str,
-        invocation_directory: &Path,
-    ) -> Result<Option<ProvisionedCertificate>, ServiceError> {
-        if !valid_fingerprint(current_fingerprint) {
-            return Err(ServiceError::invalid_request(
-                "current certificate fingerprint is invalid",
-            ));
-        }
-        validate_name(target_name)?;
-        let output = Command::new(&self.executable)
-            .arg("renew")
-            .arg(current_fingerprint)
-            .output()
-            .map_err(|_| provisioning_failed())?;
-        if !output.status.success() {
-            return Err(provisioning_failed());
-        }
-        let response: PkiRenewResponse =
-            serde_json::from_slice(&output.stdout).map_err(|_| provisioning_failed())?;
-        if !response.renewed {
-            if response.fingerprint != current_fingerprint {
-                return Err(provisioning_failed());
-            }
-            return Ok(None);
-        }
-        if response.previous_fingerprint.as_deref() != Some(current_fingerprint)
-            || !valid_fingerprint(&response.fingerprint)
-            || response.fingerprint == current_fingerprint
-        {
-            return Err(provisioning_failed());
-        }
-        let target = invocation_directory.join(target_name);
-        let status = Command::new(&self.executable)
-            .arg("download")
-            .arg(&response.fingerprint)
-            .arg(&target)
-            .current_dir(invocation_directory)
-            .status()
-            .map_err(|_| provisioning_failed())?;
-        let download_file = target.with_extension("tar.gz");
-        if !status.success() || !download_file.is_file() {
-            return Err(provisioning_failed());
-        }
-        Ok(Some(ProvisionedCertificate {
-            fingerprint: response.fingerprint,
-            uri_san: String::new(),
-            download_file,
-        }))
-    }
-
-    pub fn renew_and_verify_server(
-        &self,
-        current_fingerprint: &str,
-        target_name: &str,
-        staging_directory: &Path,
-        tools: &CertificateTools,
-        expected_sans: &[String],
-    ) -> Result<Option<VerifiedServerCertificatePackage>, ServiceError> {
-        let Some(provisioned) =
-            self.renew_and_download(current_fingerprint, target_name, staging_directory)?
-        else {
-            return Ok(None);
-        };
-        let verified = (|| {
-            let archive =
-                fs::read(&provisioned.download_file).map_err(|_| provisioning_failed())?;
-            let members = read_safe_tar_gz(&archive)?;
-            let certificate = members
-                .get("certificate.pem")
-                .ok_or_else(provisioning_failed)?
-                .clone();
-            let private_key = members
-                .get("private-key.pem")
-                .ok_or_else(provisioning_failed)?
-                .clone();
-            let trust_chain = members
-                .get("trust-chain")
-                .ok_or_else(provisioning_failed)?
-                .clone();
-            let parsed =
-                openssl::x509::X509::from_pem(&certificate).map_err(|_| provisioning_failed())?;
-            let key = openssl::pkey::PKey::private_key_from_pem(&private_key)
-                .map_err(|_| provisioning_failed())?;
-            if !parsed
-                .public_key()
-                .map_err(|_| provisioning_failed())?
-                .public_eq(&key)
-            {
-                return Err(provisioning_failed());
-            }
-            let extraction =
-                staging_directory.join(format!("verify-server-{}", uuid::Uuid::new_v4()));
-            let mut builder = fs::DirBuilder::new();
-            builder
-                .mode(0o700)
-                .create(&extraction)
-                .map_err(|_| provisioning_failed())?;
-            let verification = (|| {
-                let certificate_path = extraction.join("certificate.pem");
-                let trust_chain_path = extraction.join("trust-chain");
-                write_secret(&certificate_path, &certificate)?;
-                write_secret(&extraction.join("private-key.pem"), &private_key)?;
-                write_secret(&trust_chain_path, &trust_chain)?;
-                tools.require_trusted_chain(&certificate_path, &trust_chain_path)?;
-                let metadata = tools.inspect_server(&certificate_path)?;
-                let mut actual_sans = metadata.subject_alt_names.clone();
-                let mut expected_sans = expected_sans.to_vec();
-                actual_sans.sort();
-                expected_sans.sort();
-                if metadata.fingerprint != provisioned.fingerprint || actual_sans != expected_sans {
-                    return Err(provisioning_failed());
-                }
-                tools.require_server_aia_ocsp_good(
-                    &certificate_path,
-                    &trust_chain_path,
-                    &metadata,
-                )?;
-                Ok(())
-            })();
-            let _ = fs::remove_dir_all(&extraction);
-            verification?;
-            Ok(VerifiedServerCertificatePackage {
-                fingerprint: provisioned.fingerprint,
-                certificate,
-                private_key,
-                trust_chain,
-            })
-        })();
-        let _ = fs::remove_file(&provisioned.download_file);
-        verified.map(Some)
     }
 }
 
@@ -539,31 +390,6 @@ mod tests {
                 .code(),
             8044
         );
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn renewal_downloads_only_a_valid_replacement_generation() {
-        let root = std::env::temp_dir().join(format!("ab-jwt-pki-renew-{}", Uuid::new_v4()));
-        fs::create_dir(&root).unwrap();
-        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
-        let executable = root.join("fake-abpki-cli");
-        let old = "a".repeat(64);
-        let new = "b".repeat(64);
-        fs::write(
-            &executable,
-            format!(
-                "#!/bin/sh\nif [ \"$1\" = renew ]; then printf '{{\"renewed\":true,\"fingerprint\":\"{new}\",\"previous_fingerprint\":\"{old}\"}}'; exit 0; fi\nif [ \"$1\" = download ]; then : > \"$3.tar.gz\"; exit 0; fi\nexit 1\n"
-            ),
-        )
-        .unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-        let renewed = PkiProvisioner::new(&executable, "configured-issuer")
-            .renew_and_download(&old, "renewed-service", &root)
-            .unwrap()
-            .unwrap();
-        assert_eq!(renewed.fingerprint, new);
-        assert_eq!(renewed.download_file, root.join("renewed-service.tar.gz"));
         fs::remove_dir_all(root).unwrap();
     }
 }

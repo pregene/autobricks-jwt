@@ -6,7 +6,10 @@ use std::{
     sync::Arc,
 };
 
-use rustls::{ClientConfig, ClientConnection, StreamOwned, pki_types::ServerName};
+use rustls::{
+    ClientConfig, ClientConnection, RootCertStore, StreamOwned,
+    pki_types::{CertificateDer, PrivateKeyDer, ServerName},
+};
 use serde_json::{Value, json};
 
 type TlsStream = StreamOwned<ClientConnection, TcpStream>;
@@ -131,7 +134,7 @@ fn connect(input: &Value, operation: &str) -> TlsStream {
         .expect("server_name is required")
         .to_owned();
     let material = &input[operation];
-    let configuration = autobricks_jwt::mtls_listener::client_configuration(
+    let configuration = client_configuration(
         Path::new(
             input["server_trust"]
                 .as_str()
@@ -150,6 +153,40 @@ fn connect(input: &Value, operation: &str) -> TlsStream {
     )
     .expect("mTLS client configuration must be valid");
     tls_stream(address, &server_name, configuration)
+}
+
+fn client_configuration(
+    trust: &Path,
+    certificate: &Path,
+    private_key: &Path,
+) -> Result<Arc<ClientConfig>, String> {
+    let mut roots = RootCertStore::empty();
+    let (added, _) = roots.add_parsable_certificates(load_certificates(trust)?);
+    if added == 0 {
+        return Err("server trust contains no certificate".into());
+    }
+    ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_client_auth_cert(
+            load_certificates(certificate)?,
+            load_private_key(private_key)?,
+        )
+        .map(Arc::new)
+        .map_err(|_| "mTLS client identity is invalid".into())
+}
+
+fn load_certificates(path: &Path) -> Result<Vec<CertificateDer<'static>>, String> {
+    let file = fs::File::open(path).map_err(|_| "certificate cannot be read")?;
+    rustls_pemfile::certs(&mut std::io::BufReader::new(file))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "certificate PEM is invalid".into())
+}
+
+fn load_private_key(path: &Path) -> Result<PrivateKeyDer<'static>, String> {
+    let file = fs::File::open(path).map_err(|_| "private key cannot be read")?;
+    rustls_pemfile::private_key(&mut std::io::BufReader::new(file))
+        .map_err(|_| "private key PEM is invalid")?
+        .ok_or_else(|| "private key is missing".into())
 }
 
 fn tls_stream(address: &str, server_name: &str, configuration: Arc<ClientConfig>) -> TlsStream {

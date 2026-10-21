@@ -1,15 +1,10 @@
-use std::{
-    io::{ErrorKind, Read, Write},
-    net::IpAddr,
-    sync::Arc,
-};
+use std::{net::IpAddr, sync::Arc};
 
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
     connection_policy::{ConnectionLease, ConnectionPolicy},
-    framed_connection::MAX_SERVICE_FRAME,
     operational_logger::{OperationalLogger, SyslogSink},
     runtime_context::{PresentedCertificateIdentity, RuntimeContextHandle},
     runtime_protocol::RuntimeRequest,
@@ -24,141 +19,116 @@ pub struct ConnectionIdentity {
     pub certificate: Option<PresentedCertificateIdentity>,
 }
 
-pub fn process_runtime_connection<S, C, V, K>(
-    stream: &mut S,
-    context: &Arc<RuntimeContextHandle>,
-    identity: &ConnectionIdentity,
+pub struct RuntimeSession {
+    identity: ConnectionIdentity,
+    opened_at: u64,
     maximum_lifetime: u64,
-    mut clock: C,
-    mut revalidate: V,
-    mut keep_running: K,
-) -> Result<usize, ServiceError>
-where
-    S: Read + Write,
-    C: FnMut() -> u64,
-    V: FnMut() -> Result<(), ServiceError>,
-    K: FnMut() -> bool,
-{
-    log_connection(identity, true, None);
-    let opened_at = clock();
-    let mut lease: Option<ConnectionLease> = None;
-    let mut bound_client: Option<Uuid> = None;
-    let mut processed = 0;
-    loop {
-        let mut length = [0_u8; 4];
-        match stream.read_exact(&mut length) {
-            Ok(()) => {}
-            Err(error) if error.kind() == ErrorKind::UnexpectedEof => return Ok(processed),
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                let now = clock();
-                if !keep_running() {
-                    return Ok(processed);
-                }
-                if let Some(lease) = lease.as_ref() {
-                    lease.ensure_open(now)?;
-                } else if now.saturating_sub(opened_at) >= maximum_lifetime {
-                    return Err(classified(8025, "connection lifetime exceeded"));
-                }
-                continue;
-            }
-            Err(_) => return Err(classified(8005, "service frame header is malformed")),
+    lease: Option<ConnectionLease>,
+    bound_client: Option<Uuid>,
+}
+
+pub struct RuntimeFrameResponse {
+    pub payload: Vec<u8>,
+    pub close: bool,
+    pub idle_timeout_ms: u64,
+    pub absolute_deadline_unix_ms: u64,
+}
+
+impl RuntimeSession {
+    pub fn new(identity: ConnectionIdentity, opened_at: u64, maximum_lifetime: u64) -> Self {
+        log_connection(&identity, true, None);
+        Self {
+            identity,
+            opened_at,
+            maximum_lifetime,
+            lease: None,
+            bound_client: None,
         }
-        let length = u32::from_be_bytes(length) as usize;
-        if length == 0 || length > MAX_SERVICE_FRAME {
-            return Err(classified(
-                if length == 0 { 8005 } else { 8004 },
-                "service frame length is invalid",
-            ));
-        }
-        let mut frame = vec![0_u8; length];
-        stream
-            .read_exact(&mut frame)
-            .map_err(|_| classified(8005, "service frame body is malformed"))?;
-        let request: RuntimeRequest = serde_json::from_slice(&frame)
+    }
+
+    pub fn process_frame(
+        &mut self,
+        context: &Arc<RuntimeContextHandle>,
+        frame: &[u8],
+        now: u64,
+    ) -> Result<RuntimeFrameResponse, ServiceError> {
+        let request: RuntimeRequest = serde_json::from_slice(frame)
             .map_err(|_| classified(8005, "service frame request is malformed"))?;
         let _permit = context.begin_request()?;
-        revalidate()?;
         let active_context = context.current()?;
-        if let RuntimeRequest::CertificateActivate(activation) = &request {
-            let now = clock();
-            let authorization = match active_context.activate_initial_certificate(
-                activation,
-                identity.transport,
-                identity.source,
-                identity.certificate.as_ref(),
-                now,
-            ) {
-                Ok(value) => value,
-                Err(error) => {
-                    log_connection(identity, false, None);
-                    log_error(&error);
-                    write_client_error(stream, request.operation_name(), error)?;
-                    return Ok(processed);
-                }
-            };
+        let response = if let RuntimeRequest::CertificateActivate(activation) = &request {
+            let authorization = active_context
+                .activate_initial_certificate(
+                    activation,
+                    self.identity.transport,
+                    self.identity.source,
+                    self.identity.certificate.as_ref(),
+                    now,
+                )
+                .map_err(|error| self.rejected(error))?;
             bind_connection(
-                &mut lease,
-                &mut bound_client,
-                identity,
+                &mut self.lease,
+                &mut self.bound_client,
+                &self.identity,
                 authorization,
-                opened_at,
-                maximum_lifetime,
+                self.opened_at,
+                self.maximum_lifetime,
             )?;
-            lease
+            self.lease
                 .as_mut()
                 .ok_or_else(|| ServiceError::internal("connection lease is unavailable"))?
                 .begin_request(now)?;
-            let response = serde_json::to_vec(&json!({
+            serde_json::to_vec(&json!({
                 "status": "SUCCESS",
                 "operation": "CERTIFICATE_ACTIVATE",
                 "result": { "certificate_status": "ACTIVE" }
             }))
             .map_err(|_| {
                 ServiceError::internal("certificate activation response cannot be encoded")
-            })?;
-            stream
-                .write_all(&(response.len() as u32).to_be_bytes())
-                .and_then(|_| stream.write_all(&response))
-                .and_then(|_| stream.flush())
-                .map_err(|_| ServiceError::service_unavailable("service response write failed"))?;
-            processed += 1;
-            continue;
-        }
-        let authorization = match active_context.authorize_runtime_request(
-            &request,
-            identity.transport,
-            identity.source,
-            identity.peer,
-            identity.certificate.as_ref(),
-        ) {
-            Ok(value) => value,
-            Err(error) => {
-                log_connection(identity, false, None);
-                log_error(&error);
-                write_client_error(stream, request.operation_name(), error)?;
-                return Ok(processed);
-            }
+            })?
+        } else {
+            let authorization = active_context
+                .authorize_runtime_request(
+                    &request,
+                    self.identity.transport,
+                    self.identity.source,
+                    self.identity.peer,
+                    self.identity.certificate.as_ref(),
+                )
+                .map_err(|error| self.rejected(error))?;
+            bind_connection(
+                &mut self.lease,
+                &mut self.bound_client,
+                &self.identity,
+                authorization,
+                self.opened_at,
+                self.maximum_lifetime,
+            )?;
+            self.lease
+                .as_mut()
+                .ok_or_else(|| ServiceError::internal("connection lease is unavailable"))?
+                .begin_request(now)?;
+            active_context.dispatch_frame(frame, now)?
         };
-        bind_connection(
-            &mut lease,
-            &mut bound_client,
-            identity,
-            authorization,
-            opened_at,
-            maximum_lifetime,
-        )?;
-        let now = clock();
-        lease
-            .as_mut()
-            .ok_or_else(|| ServiceError::internal("connection lease is unavailable"))?
-            .begin_request(now)?;
-        let response = active_context.dispatch_frame(&frame, now)?;
-        stream
-            .write_all(&(response.len() as u32).to_be_bytes())
-            .and_then(|_| stream.write_all(&response))
-            .and_then(|_| stream.flush())
-            .map_err(|_| ServiceError::service_unavailable("service response write failed"))?;
-        processed += 1;
+        let lease = self
+            .lease
+            .as_ref()
+            .ok_or_else(|| ServiceError::internal("connection lease is unavailable"))?;
+        Ok(RuntimeFrameResponse {
+            payload: response,
+            close: false,
+            idle_timeout_ms: lease
+                .idle_deadline()
+                .saturating_sub(now)
+                .saturating_mul(1_000),
+            absolute_deadline_unix_ms: lease.connection_deadline().saturating_mul(1_000),
+        })
+    }
+
+    fn rejected(&self, error: ServiceError) -> ServiceError {
+        log_connection(&self.identity, false, None);
+        OperationalLogger::new(SyslogSink).classified_error(&error, &event_time());
+        error
     }
 }
 
@@ -179,10 +149,6 @@ fn log_connection(identity: &ConnectionIdentity, accepted: bool, client_id: Opti
         client_id,
         &event_time(),
     );
-}
-
-fn log_error(error: &ServiceError) {
-    OperationalLogger::new(SyslogSink).classified_error(error, &event_time());
 }
 
 fn event_time() -> String {
@@ -236,15 +202,11 @@ fn bind_connection(
     Ok(())
 }
 
-fn write_client_error<S: Write>(
-    stream: &mut S,
-    operation: &str,
-    error: ServiceError,
-) -> Result<(), ServiceError> {
+pub fn client_error_payload(operation: &str, error: ServiceError) -> Result<Vec<u8>, ServiceError> {
     let ClientDisposition::Respond(error) = error.client_disposition() else {
         return Err(error);
     };
-    let response = serde_json::to_vec(&json!({
+    serde_json::to_vec(&json!({
         "status": "ERROR",
         "operation": operation,
         "error": {
@@ -253,12 +215,7 @@ fn write_client_error<S: Write>(
             "message": error.public_message()
         }
     }))
-    .map_err(|_| ServiceError::internal("runtime error response cannot be encoded"))?;
-    stream
-        .write_all(&(response.len() as u32).to_be_bytes())
-        .and_then(|_| stream.write_all(&response))
-        .and_then(|_| stream.flush())
-        .map_err(|_| ServiceError::service_unavailable("service error response write failed"))
+    .map_err(|_| ServiceError::internal("runtime error response cannot be encoded"))
 }
 
 fn classified(code: u16, message: &'static str) -> ServiceError {

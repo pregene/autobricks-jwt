@@ -12,15 +12,17 @@ flowchart TB
     end
 
     subgraph Interfaces[Service Interfaces]
+        COMM[Autobricks COMM]
         Entry[Selected Interface]
         UDS[Unix Domain Socket]
         TCP[TCP]
         TLS[TLS]
         MTLS[Mutual TLS]
-        Entry --> UDS
-        Entry --> TCP
-        Entry --> TLS
-        Entry --> MTLS
+        Entry --> COMM
+        COMM --> UDS
+        COMM --> TCP
+        COMM --> TLS
+        COMM --> MTLS
     end
 
     subgraph JWT[Autobricks JWT Service]
@@ -68,6 +70,12 @@ defined in [DEPENDENCIES.md](DEPENDENCIES.md). Without the PKI client, only Unix
 domain socket and TCP are available. With audit logging enabled but without the
 TrueLog client, audit-event copies remain in syslog and no immutable audit
 receipt is stored.
+
+Autobricks JWT loads Autobricks COMM from `comm_library_directory`. COMM
+composes Autobricks IPC and Autobricks Transport, owns listener admission and
+connection SIDs, and renews the server TLS identity. JWT callbacks retain
+request authorization, client-certificate OCSP and registration policy, token
+operations, and session state.
 
 ## Service Registration
 
@@ -215,6 +223,7 @@ TLS and mutual TLS require an installed and configured Autobricks PKI client. Wi
 | Service | Responsibility |
 | --- | --- |
 | Autobricks JWT | Service registration, APIKEY authorization, encrypted JWT issuance, token validation, payload decryption, field authorization, and session handling |
+| Autobricks COMM | IPC and structured TCP/TLS/mTLS composition, connection lifecycle, and server TLS identity renewal |
 | Web Service | End-user authentication, application-session association, and authorization to query or revoke the selected opaque JWT session |
 | [Autobricks PKI](https://github.com/pregene/autobricks-pki) | Certificates and trust material for TLS and mutual TLS service connections |
 | Autobricks Policy | JWT field queries and policy evaluation without access to the complete decrypted payload |

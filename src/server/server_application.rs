@@ -11,12 +11,11 @@ use crate::{
     database_key_rotation::{CommandHsmDatabaseKeys, HsmDatabaseKeys},
     helper_service, management_service,
     privileged_runtime::PrivilegedRuntime,
-    production_scheduler::{ProductionSchedulerRuntime, ScheduledCertificateRenewal},
+    production_scheduler::ProductionSchedulerRuntime,
     recovery_management::ProductionRecoveryManagement,
     runtime_context::RuntimeServiceContext,
     runtime_supervisor::RuntimeSupervisor,
     server_arguments::{self, ServerCommand},
-    server_certificate_renewal::ProductionServerCertificateRenewal,
     server_configuration::ServerConfiguration,
     service_certificate_management::ProductionCertificateManagement,
     service_error::ServiceError,
@@ -131,28 +130,8 @@ where
                 configuration.clone(),
                 executable,
             ));
-            let certificate_renewal: Option<Arc<dyn ScheduledCertificateRenewal>> = if configuration
-                .pki_client
-                .is_some()
-                && configuration.runtime_transports.iter().any(|transport| {
-                    matches!(
-                        transport,
-                        crate::server_configuration::RuntimeTransport::Tls
-                            | crate::server_configuration::RuntimeTransport::MutualTls
-                    )
-                }) {
-                Some(Arc::new(ProductionServerCertificateRenewal::new(
-                    configuration.clone(),
-                    Arc::clone(&supervisor),
-                )))
-            } else {
-                None
-            };
-            let scheduler = ProductionSchedulerRuntime::start(
-                &configuration,
-                Arc::clone(&recovery),
-                certificate_renewal,
-            )?;
+            let scheduler =
+                ProductionSchedulerRuntime::start(&configuration, Arc::clone(&recovery))?;
             let certificates =
                 Arc::new(ProductionCertificateManagement::new(configuration.clone()));
             let signal_bridge = Arc::clone(&shutdown);
@@ -269,12 +248,14 @@ Keep-alive timeout: {} seconds\n\
 Require complete token for query and revoke: {}\n\
 Certificate renewal time: {}\n\
 Backup directory: {}\n\
-Backup interval: {} days\n",
+Backup interval: {} days\n\
+COMM library directory: {}\n",
         configuration.timeout_seconds,
         configuration.require_token_for_query_and_revoke,
         configuration.certificate_renewal_time,
         configuration.backup_directory.display(),
-        configuration.backup_interval_days
+        configuration.backup_interval_days,
+        configuration.comm_library_directory.display()
     )
 }
 

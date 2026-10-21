@@ -21,14 +21,6 @@ pub struct CertificateMetadata {
     pub client_auth: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ServerCertificateMetadata {
-    pub fingerprint: String,
-    pub subject_alt_names: Vec<String>,
-    pub ocsp_url: String,
-    pub not_after: String,
-}
-
 #[derive(Clone)]
 pub struct CertificateTools {
     openssl: PathBuf,
@@ -191,65 +183,6 @@ impl CertificateTools {
         })
     }
 
-    pub fn inspect_server(
-        &self,
-        certificate: &Path,
-    ) -> Result<ServerCertificateMetadata, ServiceError> {
-        let fingerprint = self
-            .openssl(certificate, &["-fingerprint", "-sha256"])?
-            .split_once('=')
-            .map(|(_, value)| value.trim().replace(':', "").to_ascii_lowercase())
-            .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-            .ok_or_else(|| classified(8011, "certificate fingerprint is invalid"))?;
-        let san = self.openssl(certificate, &["-ext", "subjectAltName"])?;
-        let subject_alt_names = san
-            .lines()
-            .skip(1)
-            .flat_map(|line| line.split(','))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        if subject_alt_names.is_empty() {
-            return Err(classified(8011, "server certificate SAN is missing"));
-        }
-        let ocsp_url = self.openssl(certificate, &["-ocsp_uri"])?.trim().to_owned();
-        if !(ocsp_url.starts_with("https://") || ocsp_url.starts_with("http://")) {
-            return Err(classified(8014, "certificate AIA OCSP URL is missing"));
-        }
-        let dates = self.openssl(certificate, &["-dates"])?;
-        let not_after = dates
-            .lines()
-            .find_map(|line| line.strip_prefix("notAfter="))
-            .ok_or_else(|| classified(8012, "certificate notAfter is missing"))?
-            .to_owned();
-        let purpose = self.openssl(certificate, &["-purpose"])?;
-        if !purpose
-            .lines()
-            .any(|line| line.trim() == "SSL server : Yes")
-        {
-            return Err(classified(
-                8013,
-                "certificate server-auth purpose is invalid",
-            ));
-        }
-        let valid = Command::new(&self.openssl)
-            .args(["x509", "-in"])
-            .arg(certificate)
-            .args(["-noout", "-checkend", "0"])
-            .status()
-            .map_err(|_| classified(8012, "certificate validity cannot be checked"))?;
-        if !valid.success() {
-            return Err(classified(8012, "certificate is outside its valid time"));
-        }
-        Ok(ServerCertificateMetadata {
-            fingerprint,
-            subject_alt_names,
-            ocsp_url,
-            not_after,
-        })
-    }
-
     pub fn require_ocsp_good(&self, fingerprint: &str) -> Result<(), ServiceError> {
         let output = Command::new(&self.abpki_cli)
             .arg("check")
@@ -324,26 +257,6 @@ impl CertificateTools {
         } else {
             Err(classified(8016, "OCSP response is invalid"))
         }
-    }
-
-    pub fn require_server_aia_ocsp_good(
-        &self,
-        certificate: &Path,
-        issuer_chain: &Path,
-        metadata: &ServerCertificateMetadata,
-    ) -> Result<(), ServiceError> {
-        self.require_aia_ocsp_good(
-            certificate,
-            issuer_chain,
-            &CertificateMetadata {
-                fingerprint: metadata.fingerprint.clone(),
-                uri_sans: Vec::new(),
-                ocsp_url: metadata.ocsp_url.clone(),
-                not_before: String::new(),
-                not_after: metadata.not_after.clone(),
-                client_auth: false,
-            },
-        )
     }
 
     pub fn require_trusted_chain(

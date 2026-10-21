@@ -48,8 +48,6 @@ pub mod error_registry;
 #[path = "registration/service_registry.rs"]
 pub mod service_registry;
 
-#[path = "registration/certificate_renewal.rs"]
-pub mod certificate_renewal;
 #[path = "registration/pki_provisioning.rs"]
 pub mod pki_provisioning;
 #[path = "registration/service_certificate.rs"]
@@ -61,6 +59,8 @@ pub mod sqlcipher_registration_repository;
 #[path = "registration/client_deletion_service.rs"]
 pub mod client_deletion_service;
 
+#[path = "communication/comm_runtime.rs"]
+pub mod comm_runtime;
 #[path = "server/privileged_runtime.rs"]
 pub mod privileged_runtime;
 #[path = "server/production_scheduler.rs"]
@@ -73,8 +73,6 @@ pub mod runtime_context;
 pub mod runtime_supervisor;
 #[path = "server/server_application.rs"]
 pub mod server_application;
-#[path = "server/server_certificate_renewal.rs"]
-pub mod server_certificate_renewal;
 #[path = "server/service_certificate_management.rs"]
 pub mod service_certificate_management;
 
@@ -96,27 +94,12 @@ pub mod session_service;
 #[path = "token/token_inspection.rs"]
 pub mod token_inspection;
 
-#[path = "listener/mtls_listener.rs"]
-pub mod mtls_listener;
-
-#[path = "listener/tcp_listener.rs"]
-pub mod tcp_listener;
-
-#[path = "listener/tls_listener.rs"]
-pub mod tls_listener;
-
-#[path = "listener/unix_socket.rs"]
-pub mod unix_socket;
-
 #[path = "listener/connection_policy.rs"]
 pub mod connection_policy;
 #[path = "listener/runtime_connection.rs"]
 pub mod runtime_connection;
-#[path = "listener/runtime_listeners.rs"]
-pub mod runtime_listeners;
-
-#[path = "listener/framed_connection.rs"]
-pub mod framed_connection;
+#[path = "listener/unix_socket.rs"]
+pub mod unix_socket;
 
 #[path = "management/management_protocol.rs"]
 pub mod management_protocol;

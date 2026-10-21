@@ -39,7 +39,6 @@ impl UnixSocketEndpoint {
             })?;
             true
         };
-
         if path.exists() {
             let metadata = fs::symlink_metadata(path).map_err(|_| {
                 ServiceError::service_unavailable("Unix socket path cannot be inspected")
@@ -56,7 +55,6 @@ impl UnixSocketEndpoint {
                 ServiceError::service_unavailable("stale Unix socket cannot be removed")
             })?;
         }
-
         let listener = match UnixListener::bind(path) {
             Ok(listener) => listener,
             Err(_) => {
@@ -77,7 +75,6 @@ impl UnixSocketEndpoint {
                 "Unix socket permissions cannot be applied",
             ));
         }
-
         Ok(Self {
             listener,
             path: path.to_path_buf(),
@@ -93,13 +90,11 @@ impl UnixSocketEndpoint {
         &self.path
     }
 
-    pub fn peer_credentials(
-        stream: &std::os::unix::net::UnixStream,
-    ) -> Result<(u32, u32), ServiceError> {
+    pub fn peer_credentials(stream: &UnixStream) -> Result<(u32, u32), ServiceError> {
         #[cfg(target_os = "macos")]
         unsafe {
-            let mut uid: libc::uid_t = 0;
-            let mut gid: libc::gid_t = 0;
+            let mut uid = 0;
+            let mut gid = 0;
             if libc::getpeereid(std::os::fd::AsRawFd::as_raw_fd(stream), &mut uid, &mut gid) != 0 {
                 return Err(ServiceError::assigned(
                     8023,
@@ -110,14 +105,14 @@ impl UnixSocketEndpoint {
         }
         #[cfg(target_os = "linux")]
         unsafe {
-            let mut credentials: libc::ucred = std::mem::zeroed();
+            let mut credentials = std::mem::zeroed::<libc::ucred>();
             let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
             if libc::getsockopt(
                 std::os::fd::AsRawFd::as_raw_fd(stream),
                 libc::SOL_SOCKET,
                 libc::SO_PEERCRED,
-                (&mut credentials as *mut libc::ucred).cast(),
-                &mut length,
+                (&raw mut credentials).cast(),
+                &raw mut length,
             ) != 0
             {
                 return Err(ServiceError::assigned(
@@ -178,28 +173,16 @@ mod tests {
             Uuid::new_v4()
         ));
         let socket_path = directory.join("ab-jwtd.sock");
-
         let endpoint = UnixSocketEndpoint::bind(&socket_path).unwrap();
         endpoint.listener().local_addr().unwrap();
         assert_eq!(endpoint.path(), socket_path);
-
         let socket_metadata = fs::symlink_metadata(&socket_path).unwrap();
         let parent_metadata = fs::metadata(&directory).unwrap();
         assert!(socket_metadata.file_type().is_socket());
         assert_eq!(socket_metadata.mode() & 0o777, 0o660);
         assert_eq!(parent_metadata.mode() & 0o777, 0o750);
-        assert_eq!(socket_metadata.mode() & 0o007, 0);
-        assert_eq!(parent_metadata.mode() & 0o007, 0);
-
-        println!("Unix socket created: {}", socket_path.display());
-        println!("Unix socket file type: socket");
-        println!("Unix socket mode: 0660");
-        println!("Unix socket parent mode: 0750");
-        println!("Unix socket world access: denied");
-
         drop(endpoint);
         assert!(!socket_path.exists());
         assert!(!directory.exists());
-        println!("Unix socket cleanup: removed");
     }
 }

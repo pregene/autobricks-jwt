@@ -467,28 +467,19 @@ impl RuntimeServiceContext {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        io::{Read, Write},
-        net::TcpStream,
-        sync::Arc,
-        thread,
-        time::Duration,
-    };
+    use std::{fs, sync::Arc, thread, time::Duration};
 
     use serde_json::{Map, Value, json};
     use uuid::Uuid;
 
     use crate::{
         audit_log_repository::{AuditLogRecord, AuditLogRepository},
-        connection_policy::ConnectionPolicy,
         database_key_rotation::HsmDatabaseKeys,
         issuance_service::{IssuanceService, JwtCreateRequest},
         service_certificate::{CertificateMetadata, ServiceCertificateRepository},
         service_error::ServiceError,
         service_registry::{OperationClass, ServiceRegistry},
         sqlcipher_token_repository::SqlCipherTokenRepository,
-        tcp_listener::TcpListenerEndpoint,
     };
 
     use super::{RuntimeContextHandle, RuntimeServiceContext};
@@ -587,38 +578,6 @@ mod tests {
         let response: Value = serde_json::from_slice(&response).unwrap();
         assert_eq!(response["status"], "SUCCESS");
         assert_eq!(response["operation"], "JWT_CREATE");
-        drop(context);
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    #[ignore = "creates a local TCP listener"]
-    fn tcp_listener_frames_reach_the_runtime_dispatcher() {
-        let (context, client_id, apikey, path) = seeded_context();
-        let endpoint = TcpListenerEndpoint::bind("127.0.0.1:0").unwrap();
-        let address = endpoint.local_addr().unwrap();
-        let policy = ConnectionPolicy::new("127.0.0.1/32", 30, 300).unwrap();
-        let server_context = Arc::clone(&context);
-        let server = thread::spawn(move || {
-            endpoint
-                .serve_one(&policy, |frame| server_context.dispatch_frame(frame, 1_000))
-                .unwrap()
-        });
-
-        let request = create_frame(client_id, &apikey);
-        let mut stream = TcpStream::connect(address).unwrap();
-        stream
-            .write_all(&(request.len() as u32).to_be_bytes())
-            .unwrap();
-        stream.write_all(&request).unwrap();
-        let mut length = [0_u8; 4];
-        stream.read_exact(&mut length).unwrap();
-        let mut response = vec![0; u32::from_be_bytes(length) as usize];
-        stream.read_exact(&mut response).unwrap();
-        drop(stream);
-        assert_eq!(server.join().unwrap(), 1);
-        let response: Value = serde_json::from_slice(&response).unwrap();
-        assert_eq!(response["status"], "SUCCESS");
         drop(context);
         fs::remove_file(path).unwrap();
     }

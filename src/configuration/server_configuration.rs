@@ -32,6 +32,7 @@ pub struct ServerConfiguration {
     pub server_private_key: Option<PathBuf>,
     pub server_trust_chain: Option<PathBuf>,
     pub client_trust_chain: Option<PathBuf>,
+    pub comm_library_directory: PathBuf,
     pub cache_library: PathBuf,
     pub truelog_client: Option<PathBuf>,
     pub openssl: PathBuf,
@@ -169,6 +170,7 @@ impl ServerConfiguration {
             "server_private_key",
             "server_trust_chain",
             "client_trust_chain",
+            "comm_library_directory",
             "cache_library",
             "truelog_client",
             "openssl",
@@ -300,6 +302,15 @@ impl ServerConfiguration {
         let server_private_key = values.remove("server_private_key").map(PathBuf::from);
         let server_trust_chain = values.remove("server_trust_chain").map(PathBuf::from);
         let client_trust_chain = values.remove("client_trust_chain").map(PathBuf::from);
+        let comm_library_directory = values
+            .remove("comm_library_directory")
+            .map(PathBuf::from)
+            .unwrap_or_else(default_comm_library_directory);
+        if !comm_library_directory.is_absolute() {
+            return Err(ServiceError::configuration_invalid(
+                "comm_library_directory must be an absolute path",
+            ));
+        }
         let cache_library = values
             .remove("cache_library")
             .map(PathBuf::from)
@@ -427,6 +438,7 @@ impl ServerConfiguration {
             server_private_key,
             server_trust_chain,
             client_trust_chain,
+            comm_library_directory,
             cache_library,
             truelog_client,
             openssl,
@@ -436,6 +448,14 @@ impl ServerConfiguration {
             ocsp_responder_override,
             maximum_connection_lifetime_seconds,
         })
+    }
+}
+
+fn default_comm_library_directory() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        PathBuf::from("/usr/local/lib/autobricks")
+    } else {
+        PathBuf::from("/usr/lib/autobricks")
     }
 }
 
